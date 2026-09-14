@@ -15,10 +15,10 @@
 ```bash
 dotnet build -c Release
 
-# 测试。未获取 Mod 文件时，依赖它们的用例会自动跳过
+# 全量测试。未获取 Mod 文件时，依赖它们的用例会自动跳过
 ./test/Harness/bin/Release/net8.0-windows/Harness.exe
 
-# 获取 Mod 文件（约 75 MB，写入项目的 mod 目录）
+# 获取 Mod 文件（约 101 MB，写入项目的 mod 目录）
 ./test/Harness/bin/Release/net8.0-windows/Harness.exe --fetch
 
 # 只扫描本机游戏并报告反作弊情况，不改动任何文件
@@ -26,6 +26,24 @@ dotnet build -c Release
 ```
 
 测试会把数据目录隔离到临时位置（通过 `DLSSGMANAGER_HOME` 环境变量），不会碰你真实的 `library.json` 和 `manager.log`。
+
+## 打包
+
+```bash
+# 单文件 exe（自包含，目标机器无需装 .NET）
+dotnet publish src/DLSSGManager/DLSSGManager.csproj \
+  -c Release -r win-x64 --self-contained true \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+  -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+```
+
+安装包用 [Inno Setup 6](https://jrsoftware.org/isdl.php) 编译（`installer/languages/` 下的简体中文语言文件随仓库提供，Inno 安装包未内置）：
+
+```powershell
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.7.3 installer\setup.iss
+```
+
+产物在 `dist/`。推 `v*` 标签（例如 `git tag v1.7.3 && git push origin v1.7.3`）会由 GitHub Actions 自动完成构建、测试、打包并创建 Release，附两个 exe 与 `SHA256SUMS.txt`。
 
 ## 改动前的建议
 

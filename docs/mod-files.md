@@ -18,7 +18,7 @@ mod/
 
 `altnative/` 里还可以放**你自己添加的入口 DLL**（例如你自己编译的构建）：管理器不会从上游下载它们，但你在界面上点「添加代理 DLL…」时就会按原文件名放进这个目录，之后和自带入口一样可部署、可恢复。
 
-0.3.0 发布 6 个入口：根目录的 `version.dll` 与 `alternatives\` 下的 5 个。管理器把源文件夹里的 `alternatives\` 映射到自己的 `altnative\`，本地布局不变。旧版本发布过的 `winhttp.dll` 会在更新时被清理掉（只删带本项目签名的文件），免得它看起来像是你自己加的入口。详见 [../extra-proxies/README.md](../extra-proxies/README.md) 与 README 的「入口名与自定义 DLL」。
+0.3.0 发布 6 个入口：根目录的 `version.dll` 与 `alternatives\` 下的 5 个。管理器把源文件夹里的 `alternatives\` 映射到自己的 `altnative\`，本地布局不变。旧版本发布过的 `winhttp.dll` 会在更新时被清理掉（只删带本项目签名的文件），免得它看起来像是你自己加的入口。详见 [../extra-proxies/README.md](../extra-proxies/README.md)。
 
 这些文件**不提交到本仓库**，原因有两个。
 
