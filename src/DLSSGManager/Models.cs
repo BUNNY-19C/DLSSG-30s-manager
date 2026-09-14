@@ -43,20 +43,32 @@ public sealed class GameProfile : Observable
     private string _router = "SM86";
     private string _kernelImage = "PTX";
     private bool _hardwareBilinear;
-    private int _maxGeneratedFrames = 3;
+    private bool _enabled = true;
+    private bool _optimized = true;
+    private string _preset = "Auto";
+    private int _maxGeneratedFrames = 5;
     private int _logLevel = 1;
     private bool _diagnostics;
 
-    /// <summary>SM86 for RTX 30 series, SM75 for RTX 20 series.</summary>
+    /// <summary>0.3.0: frame generation on (bundled runtime) or off (the game's own DLSSG loads).</summary>
+    public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+
+    /// <summary>0.3.0: use the project's optimized kernels instead of the runtime's stock numerics.</summary>
+    public bool Optimized { get => _optimized; set => Set(ref _optimized, value); }
+
+    /// <summary>0.3.0: DLSS-G render preset. Auto lets the game or the driver profile decide.</summary>
+    public string Preset { get => _preset; set => Set(ref _preset, value); }
+
+    /// <summary>0.2.x only: SM86 for RTX 30 series, SM75 for RTX 20 series.</summary>
     public string Router { get => _router; set => Set(ref _router, value); }
 
-    /// <summary>PTX (driver JIT), Auto, or Cubin (exact match only).</summary>
+    /// <summary>0.2.x only: PTX (driver JIT), Auto, or Cubin (exact match only).</summary>
     public string KernelImage { get => _kernelImage; set => Set(ref _kernelImage, value); }
 
-    /// <summary>0 = exact output, 1 = optional approximate sampling (SM86 only).</summary>
+    /// <summary>0.2.x only: 0 = exact output, 1 = optional approximate sampling (SM86 only).</summary>
     public bool HardwareBilinear { get => _hardwareBilinear; set => Set(ref _hardwareBilinear, value); }
 
-    /// <summary>Capability limit 1/2/3, mapping to 2X/3X/4X.</summary>
+    /// <summary>Capability limit 1/2/3/4/5, mapping to 2X/3X/4X/5X/6X. 0.3.0 raised the ceiling to 5.</summary>
     public int MaxGeneratedFrames { get => _maxGeneratedFrames; set => Set(ref _maxGeneratedFrames, value); }
 
     /// <summary>0 = off, 1 = errors, 2 = diagnostics, 3 = verbose.</summary>
@@ -70,6 +82,9 @@ public sealed class GameProfile : Observable
         Router = Router,
         KernelImage = KernelImage,
         HardwareBilinear = HardwareBilinear,
+        Enabled = Enabled,
+        Optimized = Optimized,
+        Preset = Preset,
         MaxGeneratedFrames = MaxGeneratedFrames,
         LogLevel = LogLevel,
         Diagnostics = Diagnostics,
@@ -80,6 +95,9 @@ public sealed class GameProfile : Observable
         Router = other.Router;
         KernelImage = other.KernelImage;
         HardwareBilinear = other.HardwareBilinear;
+        Enabled = other.Enabled;
+        Optimized = other.Optimized;
+        Preset = other.Preset;
         MaxGeneratedFrames = other.MaxGeneratedFrames;
         LogLevel = other.LogLevel;
         Diagnostics = other.Diagnostics;

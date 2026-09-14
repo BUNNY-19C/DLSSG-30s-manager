@@ -279,11 +279,12 @@ public static class DeploymentService
 
     /// <summary>
     /// First entry name in the game directory that already holds something of ours: a DLL carrying this
-    /// project's signature, or a file the given record claims whose bytes still match.
+    /// project's signature, a published extra (the community d3d12.dll, by hash), or a file the given
+    /// record claims whose bytes still match.
     ///
     /// Scanning covers <see cref="ModSource.KnownProxyNames"/> rather than only the published five, so an
-    /// entry the user added is recognised on the next deploy instead of a second name being picked
-    /// alongside it — two live proxies is the crash this invariant exists to prevent.
+    /// entry the user added — including one copied into the game folder by hand — is recognised on the
+    /// next status check instead of the game looking undeployed.
     /// </summary>
     public static string? FindInstalledProxy(string renderDir, DeploymentInfo? prev = null)
     {
@@ -801,12 +802,14 @@ public static class DeploymentService
 
     /// <summary>
     /// True when an entry-name slot holds something this project put there: a DLL carrying our signature,
-    /// or a file a deployment record claims whose bytes still match.
+    /// a published extra (byte for byte), or a file a deployment record claims whose bytes still match.
     ///
-    /// The record half exists for entries the user added themselves. A community build such as d3d12.dll
-    /// has no signature this project can vouch for, so the hash recorded at deploy time is the only proof
-    /// that the file is ours to reuse, report or delete. The signature check is still tried as a fallback,
-    /// so a deployment made before records carried hashes is recognised exactly as it was before.
+    /// The record half exists for entries the user added themselves, and the extra half for the community
+    /// build this project distributes — a file installed by hand from that distribution is recognised by
+    /// its pinned hash rather than by a signature it does not carry. Without it, a manually copied
+    /// d3d12.dll would look like "nothing deployed" and could never be adopted or restored. The signature
+    /// check stays as a fallback, so a deployment made before records carried hashes is recognised
+    /// exactly as it was before.
     /// </summary>
     private static bool IsOurProxyAt(string root, string name, DeploymentInfo? prev)
     {
@@ -823,11 +826,11 @@ public static class DeploymentService
             }
             catch
             {
-                // An unreadable file falls through to the signature check, which will also fail.
+                // An unreadable file falls through to the checks below, which will also fail.
             }
         }
 
-        return IsProjectSigned(path);
+        return ModFetcher.IsKnownCommunityBuild(path) || IsProjectSigned(path);
     }
 
     /// <summary>Evaluates and applies in one call, for callers already off the UI thread.</summary>

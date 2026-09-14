@@ -444,27 +444,33 @@
 
                             <TextBlock Text="{loc:Tr Detail.GroupFg}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
 
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Tr Detail.Router}" Style="{StaticResource FieldLabel}" />
-                                <ComboBox Grid.Column="1" SelectedValuePath="Content" Margin="0,0,14,0"
-                                          SelectedValue="{Binding Profile.Router, Mode=TwoWay}">
-                                    <ComboBoxItem Content="SM86" />
-                                    <ComboBoxItem Content="SM75" />
-                                </ComboBox>
-                                <TextBlock Grid.Column="2" Text="{loc:Tr Detail.KernelImage}" Style="{StaticResource FieldLabel}" />
-                                <ComboBox Grid.Column="3" Width="150" SelectedValuePath="Content"
-                                          SelectedValue="{Binding Profile.KernelImage, Mode=TwoWay}">
-                                    <ComboBoxItem Content="PTX" />
-                                    <ComboBoxItem Content="Auto" />
-                                    <ComboBoxItem Content="Cubin" />
-                                </ComboBox>
-                            </Grid>
+                            <!--
+                                两组配置项，按 mod 源里的 INI schema 显示一组：
+                                  · 0.3.0（当前）Enabled / Optimized / Preset
+                                  · 0.2.x（旧）  Router / KernelImage / HardwareBilinear + 诊断段
+                                管理器只写模板里存在的键，所以显示另一组的键不会有任何作用——
+                                与其留三个点了没反应的控件，不如按 schema 隐藏。
+                            -->
+                            <StackPanel x:Name="ModernSettings">
+                                <CheckBox Content="{loc:Tr Detail.Enabled}"
+                                          IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8" />
+                                <CheckBox Content="{loc:Tr Detail.Optimized}"
+                                          IsChecked="{Binding Profile.Optimized, Mode=TwoWay}" Margin="0,0,0,8" />
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
+                                    <ComboBox Grid.Column="1" SelectedValuePath="Content"
+                                              SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
+                                              ToolTip="{loc:Tr Detail.PresetTip}">
+                                        <ComboBoxItem Content="Auto" />
+                                        <ComboBoxItem Content="A" />
+                                        <ComboBoxItem Content="B" />
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
 
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
@@ -483,10 +489,33 @@
                                           SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
                             </Grid>
 
-                            <CheckBox Content="{loc:Tr Detail.HardwareBilinear}"
-                                      IsChecked="{Binding Profile.HardwareBilinear, Mode=TwoWay}" Margin="88,2,0,8" />
-                            <CheckBox Content="{loc:Tr Detail.Diagnostics}"
-                                      IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="88,0,0,4" />
+                            <StackPanel x:Name="LegacySettings">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Tr Detail.Router}" Style="{StaticResource FieldLabel}" />
+                                    <ComboBox Grid.Column="1" SelectedValuePath="Content" Margin="0,0,14,0"
+                                              SelectedValue="{Binding Profile.Router, Mode=TwoWay}">
+                                        <ComboBoxItem Content="SM86" />
+                                        <ComboBoxItem Content="SM75" />
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2" Text="{loc:Tr Detail.KernelImage}" Style="{StaticResource FieldLabel}" />
+                                    <ComboBox Grid.Column="3" Width="150" SelectedValuePath="Content"
+                                              SelectedValue="{Binding Profile.KernelImage, Mode=TwoWay}">
+                                        <ComboBoxItem Content="PTX" />
+                                        <ComboBoxItem Content="Auto" />
+                                        <ComboBoxItem Content="Cubin" />
+                                    </ComboBox>
+                                </Grid>
+                                <CheckBox Content="{loc:Tr Detail.HardwareBilinear}"
+                                          IsChecked="{Binding Profile.HardwareBilinear, Mode=TwoWay}" Margin="0,2,0,8" />
+                                <CheckBox Content="{loc:Tr Detail.Diagnostics}"
+                                          IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="0,0,0,4" />
+                            </StackPanel>
 
                             <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,14,0,4" />
 

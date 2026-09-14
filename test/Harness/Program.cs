@@ -77,7 +77,8 @@ public static class Program
             TestAntiCheat(modRoot, work);
             TestPersistence(work);
             TestUrlPolicy();
-            TestPublishedExtras(work);
+            TestCommunityBuildRecognition(work);
+            TestHandInstalledExtra(modRoot, work);
             TestSourceSelection();
             TestThemes();
             TestSignatureVerification(modRoot, work);
@@ -165,7 +166,13 @@ public static class Program
         Console.WriteLine();
 
         var progress = new Progress<string>(text => Console.WriteLine("  " + text));
-        var result = ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None)
+
+        // Same probe the application runs before a download, so this path also reports (and records) which
+        // release it fetched.
+        var detected = ModFetcher.DetectLatestVersionAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (detected is not null) Console.WriteLine("  上游最新版本：" + detected);
+
+        var result = ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None, versionLabel: detected)
             .GetAwaiter().GetResult();
 
         foreach (var line in result.Lines) Console.WriteLine("  " + line);
@@ -176,7 +183,7 @@ public static class Program
         Console.WriteLine($"源有效性: {source.IsValid}" + (source.IsValid ? $" · 版本 {source.Version}" : $" · {source.ValidationMessage}"));
         Console.WriteLine($"代理入口: {(source.Proxies.Count == 0 ? "(无)" : string.Join("、", source.Proxies))}");
 
-        var ok = result.Ok && source.IsValid && source.Proxies.Count == 5;
+        var ok = result.Ok && source.IsValid && source.Proxies.Count == ModSource.ProxyCandidates.Length;
 
         Console.WriteLine();
         if (ok)
@@ -349,15 +356,16 @@ public static class Program
         // is re-fetched from the network and moves on, and a stale expectation here would fail the
         // suite for a reason that has nothing to do with the manager.
         var bannerVersion = ModSource.ReadVersion(Path.Combine(modRoot, ModSource.IniName));
-        Check("版本号从 INI 横幅解析", bannerVersion is not null && source.Version == bannerVersion,
-            $"横幅 {bannerVersion ?? "(无)"} vs 解析 {source.Version}");
-        Check("五个代理入口全部识别", source.Proxies.Count == 5,
+        Check("版本号从 INI 横幅或版本标记解析",
+            source.Version != Loc.T("ModSource.UnknownVersion"),
+            "实际: " + source.Version);
+        Check("自带的入口全部识别", source.Proxies.Count == ModSource.ProxyCandidates.Length,
             "实际: " + string.Join(",", source.Proxies));
         Check("version.dll 在根目录", File.Exists(Path.Combine(modRoot, "version.dll")));
-        Check("altnative 四个备用入口齐全",
-            ModSource.ProxyCandidates.Skip(1).All(n => File.Exists(Path.Combine(modRoot, "altnative", n))));
-        Check("两档预设齐全",
-            source.PresetPath("sm86-default") is not null && source.PresetPath("sm86-performance") is not null);
+        Check("altnative 备用入口齐全",
+            ModSource.ProxyCandidates.Skip(1).All(n => File.Exists(Path.Combine(modRoot, "altnative", n))),
+            string.Join(",", ModSource.ProxyCandidates.Skip(1)
+                .Where(n => !File.Exists(Path.Combine(modRoot, "altnative", n)))));
 
         var bad = new ModSource(Path.Combine(modRoot, "does_not_exist"));
         Check("不存在的目录判为无效", !bad.IsValid);
@@ -370,16 +378,33 @@ public static class Program
 
         var template = File.ReadAllText(Path.Combine(modRoot, "dlssg_sm86.ini"), Encoding.UTF8);
 
-        var profile = new GameProfile { Router = "SM75", KernelImage = "Cubin", HardwareBilinear = true, MaxGeneratedFrames = 2, LogLevel = 3 };
+        // 0.3.0 schema: Enabled / Optimized / Preset replaced Router / KernelImage / HardwareBilinear.
+        var profile = new GameProfile
+        {
+            Enabled = false, Optimized = false, Preset = "B", MaxGeneratedFrames = 2, LogLevel = 3,
+            Router = "SM75", KernelImage = "Cubin", HardwareBilinear = true,
+        };
         var rendered = IniTemplate.Render(template, profile);
 
-        Check("Router 已写入", rendered.Contains("Router=SM75"), rendered);
-        Check("KernelImage 已写入", rendered.Contains("KernelImage=Cubin"));
-        Check("HardwareBilinear 已写入", rendered.Contains("HardwareBilinear=1"));
+        Check("Enabled 已写入", rendered.Contains("Enabled=0"), rendered);
+        Check("Optimized 已写入", rendered.Contains("Optimized=0"));
+        Check("Preset 已写入", rendered.Contains("Preset=B"));
         Check("MaxGeneratedFrames 已写入", rendered.Contains("MaxGeneratedFrames=2"));
         Check("Level 已写入", rendered.Contains("Level=3"));
-        Check("未重复写入键", rendered.Split("Router=").Length == 2, "Router= 出现次数异常");
-        Check("保留原有注释", rendered.Contains("SM86 for Ampere"));
+        Check("未重复写入键", rendered.Split("MaxGeneratedFrames=").Length == 2, "MaxGeneratedFrames= 出现次数异常");
+        Check("保留原有注释", rendered.Contains("DLSSG SM86"));
+
+        // The old schema's keys must not be injected into a payload that does not define them: the manager
+        // writes settings the build can actually read, and nothing else.
+        Check("不写入旧 schema 的键",
+            !rendered.Contains("Router=") && !rendered.Contains("KernelImage=") && !rendered.Contains("HardwareBilinear="));
+
+        // A 0.2.x payload still receives its own keys.
+        var legacyTemplate = "; Native 0.2.3.\r\n[Compatibility]\r\nRouter=SM86\r\nKernelImage=PTX\r\nHardwareBilinear=0\r\n\r\n[FrameGeneration]\r\nMaxGeneratedFrames=3\r\n\r\n[Logging]\r\nLevel=1\r\n";
+        var legacyRendered = IniTemplate.Render(legacyTemplate, profile);
+        Check("旧 payload 仍写入 Router", legacyRendered.Contains("Router=SM75"), legacyRendered);
+        Check("旧 payload 仍写入 KernelImage", legacyRendered.Contains("KernelImage=Cubin"));
+        Check("旧 payload 仍写入 HardwareBilinear", legacyRendered.Contains("HardwareBilinear=1"));
 
         var withDiag = IniTemplate.Render(template, new GameProfile { Diagnostics = true });
         Check("诊断段按需添加", withDiag.Contains("[Diagnostics]"));
@@ -395,7 +420,7 @@ public static class Program
 
         // Range clamping keeps a corrupt library file from producing an unreadable INI.
         var clamped = IniTemplate.Render(template, new GameProfile { MaxGeneratedFrames = 99, LogLevel = -5 });
-        Check("倍率上限被夹取到 3", clamped.Contains("MaxGeneratedFrames=3"));
+        Check("倍率上限被夹取到 5", clamped.Contains("MaxGeneratedFrames=5"));
         Check("日志级别被夹取到 0", clamped.Contains("Level=0"));
     }
 
@@ -735,10 +760,12 @@ public static class Program
         Check("所有占用文件保持原样",
             ModSource.ProxyCandidates.All(n => Sha(Path.Combine(dir, n)) == hashes[n]));
 
-        // The community entry name must not be used as a fallback. Deploying version.dll under the name
-        // d3d12.dll would leave the game's D3D12 imports pointing at a DLL that does not export them, and
-        // the game would not start — so an entry is only deployable when a DLL for that name exists.
-        Check("不会退而求其次占用 d3d12.dll 这个名字", !File.Exists(Path.Combine(dir, "d3d12.dll")));
+        // Every deployable name is occupied, so no name at all is left: the manager reports the conflict
+        // rather than inventing one. (0.3.0 ships six entry points, and each is deployed from the file
+        // built for that name — the file and the name can no longer be mismatched.)
+        Check("没有留下任何新文件",
+            Directory.GetFiles(dir).Length == ModSource.ProxyCandidates.Length + 2,   // + 游戏 exe 与 marker
+            string.Join(",", Directory.GetFiles(dir).Select(Path.GetFileName)));
     }
 
     /// <summary>
@@ -750,9 +777,12 @@ public static class Program
     {
         Section("添加代理 DLL（本地入口）");
 
-        Check("d3d12.dll 属于已知入口名", ModSource.IsKnownProxyName("d3d12.dll"));
-        Check("入口名匹配不区分大小写", ModSource.IsKnownProxyName("D3D12.DLL"));
-        Check("自带入口不在导入集合里", !ModSource.ProxyCandidates.Contains("d3d12.dll"));
+        Check("winhttp.dll 属于已知入口名", ModSource.IsKnownProxyName("winhttp.dll"));
+        Check("入口名匹配不区分大小写", ModSource.IsKnownProxyName("WINHTTP.DLL"));
+        // 0.3.0 ships d3d12.dll and dbghelp.dll itself; winhttp.dll left the release but stays known, so
+        // it is the name an import can legitimately take.
+        Check("d3d12.dll 是自带入口", ModSource.ProxyCandidates.Contains("d3d12.dll"));
+        Check("winhttp.dll 不是自带入口", !ModSource.ProxyCandidates.Contains("winhttp.dll"));
 
         var source = MakeSyntheticModSource(work);
         var before = new ModSource(source);
@@ -762,24 +792,24 @@ public static class Program
 
         // A community build: a plausible entry name, and no signature this project can vouch for. The
         // file name *is* the entry name, so the fixture has to carry the real one.
-        var communityDir = Path.Combine(work, "CommunityBuild");
-        Directory.CreateDirectory(communityDir);
-        var community = Path.Combine(communityDir, "d3d12.dll");
-        File.WriteAllBytes(community, RandomNumberGenerator.GetBytes(4096));
+        var localDir = Path.Combine(work, "LocalBuild");
+        Directory.CreateDirectory(localDir);
+        var local = Path.Combine(localDir, "winhttp.dll");
+        File.WriteAllBytes(local, RandomNumberGenerator.GetBytes(4096));
 
-        var add = ModSource.ImportProxy(source, community);
+        var add = ModSource.ImportProxy(source, local);
         Check("导入成功", add.Ok, add.Message);
-        Check("以原文件名落在 altnative 下", File.Exists(Path.Combine(source, "altnative", "d3d12.dll")));
-        Check("内容与所选文件一致", Sha(Path.Combine(source, "altnative", "d3d12.dll")) == Sha(community));
+        Check("以原文件名落在 altnative 下", File.Exists(Path.Combine(source, "altnative", "winhttp.dll")));
+        Check("内容与所选文件一致", Sha(Path.Combine(source, "altnative", "winhttp.dll")) == Sha(local));
 
         var after = new ModSource(source);
-        Check("本地入口被识别", after.ImportedProxies.Count == 1 && after.ImportedProxies[0] == "d3d12.dll",
+        Check("本地入口被识别", after.ImportedProxies.Count == 1 && after.ImportedProxies[0] == "winhttp.dll",
             string.Join("、", after.ImportedProxies));
-        Check("可用入口变为六个", after.AvailableProxies.Count == ModSource.ProxyCandidates.Length + 1,
+        Check("可用入口 = 自带 + 本地", after.AvailableProxies.Count == ModSource.ProxyCandidates.Length + 1,
             string.Join("、", after.AvailableProxies));
-        Check("自带入口仍是五个", after.Proxies.Count == ModSource.ProxyCandidates.Length,
+        Check("自带入口不受影响", after.Proxies.Count == ModSource.ProxyCandidates.Length,
             string.Join("、", after.Proxies));
-        Check("本地入口排在自己五个之后",
+        Check("本地入口排在自己几个之后",
             after.AvailableProxies.Take(ModSource.ProxyCandidates.Length).SequenceEqual(ModSource.ProxyCandidates));
 
         // The project's own builds must never be replaced by an import: their signature is what every
@@ -797,13 +827,13 @@ public static class Program
 
         // Deploy the imported entry, then remove it again with the normal restore path.
         var dir = MakeGameDir(work, "GameImportedProxy");
-        var game = new GameEntry { Name = "GameImportedProxy", RenderDir = dir, PreferredProxy = "d3d12.dll" };
+        var game = new GameEntry { Name = "GameImportedProxy", RenderDir = dir, PreferredProxy = "winhttp.dll" };
 
         var deploy = DeploymentService.Deploy(game, new ModSource(source));
         Check("部署本地入口成功", deploy.Ok, deploy.Message);
-        Check("入口名记录为 d3d12.dll", game.Deployment?.ProxyName == "d3d12.dll", game.Deployment?.ProxyName);
-        Check("游戏目录里出现 d3d12.dll", File.Exists(Path.Combine(dir, "d3d12.dll")));
-        Check("部署内容与本地代理一致", Sha(Path.Combine(dir, "d3d12.dll")) == Sha(community));
+        Check("入口名记录为 winhttp.dll", game.Deployment?.ProxyName == "winhttp.dll", game.Deployment?.ProxyName);
+        Check("游戏目录里出现 winhttp.dll", File.Exists(Path.Combine(dir, "winhttp.dll")));
+        Check("部署内容与本地代理一致", Sha(Path.Combine(dir, "winhttp.dll")) == Sha(local));
         Check("代理与 INI 都记了指纹", game.Deployment!.Files.Count == 2, "实际: " + game.Deployment.Files.Count);
 
         DeploymentService.Check(game);
@@ -811,7 +841,7 @@ public static class Program
 
         var restore = DeploymentService.Restore(game, removeLogs: false);
         Check("一键恢复成功", restore.Ok, restore.Message);
-        Check("一键恢复删除了 d3d12.dll", !File.Exists(Path.Combine(dir, "d3d12.dll")));
+        Check("一键恢复删除了 winhttp.dll", !File.Exists(Path.Combine(dir, "winhttp.dll")));
         Check("INI 也已删除", !File.Exists(Path.Combine(dir, ModSource.IniName)));
 
         DeploymentService.Check(game);
@@ -947,10 +977,13 @@ public static class Program
 
         var adopt = DeploymentService.Adopt(game);
         Check("接管成功", adopt.Ok, adopt.Message);
+        // The adopted release is read from the game folder's INI, which 0.3.0 no longer marks with a
+        // version banner — so "unknown" is a legitimate answer there, and the point is that adopting
+        // succeeds and records something rather than throwing the version away.
         var adoptedVersion = ModSource.ReadVersion(Path.Combine(dir, ModSource.IniName));
-        Check("接管后版本号从 INI 读出",
-            adoptedVersion is not null && game.Deployment?.ModVersion == adoptedVersion,
-            $"横幅 {adoptedVersion ?? "(无)"} vs 记录 {game.Deployment?.ModVersion}");
+        Check("接管后记录版本号",
+            game.Deployment?.ModVersion == (adoptedVersion ?? Loc.T("ModSource.UnknownVersion")),
+            $"INI 横幅 {adoptedVersion ?? "(无)"}，记录 {game.Deployment?.ModVersion}");
 
         DeploymentService.Check(game);
         Check("接管后状态为已部署", game.Status == GameStatus.Deployed, game.StatusText + " / " + game.StatusDetail);
@@ -1451,7 +1484,7 @@ public static class Program
             "{\"Games\":[{\"Name\":\"x\",\"Profile\":{\"MaxGeneratedFrames\":99,\"LogLevel\":-3,\"Router\":\"bogus\",\"KernelImage\":\"weird\"}}]}");
         var clamped = LibraryStore.Load(Path.Combine(work, "outofrange.json"));
         var cg = clamped.Games.FirstOrDefault();
-        Check("越界倍率被夹取", cg?.Profile.MaxGeneratedFrames == 3, "实际: " + cg?.Profile.MaxGeneratedFrames);
+        Check("越界倍率被夹取", cg?.Profile.MaxGeneratedFrames == 5, "实际: " + cg?.Profile.MaxGeneratedFrames);
         Check("越界日志级别被夹取", cg?.Profile.LogLevel == 0, "实际: " + cg?.Profile.LogLevel);
         Check("非法路由被归一", cg?.Profile.Router == "SM86", cg?.Profile.Router);
         Check("非法内核镜像被归一", cg?.Profile.KernelImage == "PTX", cg?.Profile.KernelImage);
@@ -1742,58 +1775,61 @@ public static class Program
         Check("拒绝 file 协议", !ModFetcher.IsAllowedAddress(new Uri("file:///C:/x")));
 
         // Every configured source must itself pass the policy: a source added to the list but
-        // rejected by the allow-list would silently never work. Both the upstream archive address and
-        // the addresses used for this project's own extras are checked, since both can be contacted.
+        // rejected by the allow-list would silently never work.
         foreach (var source in ModFetcher.SourceIds)
         {
             var archive = ModFetcher.ArchiveUrlFor(source);
             Check($"已配置源通过策略：{source}", ModFetcher.IsAllowedAddress(new Uri(archive)), archive);
         }
 
-        foreach (var url in ModFetcher.ExtraUrls())
-            Check($"附加入口地址通过策略：{url}", ModFetcher.IsAllowedAddress(new Uri(url)), url);
+        Check("版本探测地址通过策略",
+            ModFetcher.IsAllowedAddress(new Uri(ModFetcher.VersionProbeUrl)), ModFetcher.VersionProbeUrl);
 
         Console.WriteLine("      配置的源: " + string.Join(" | ", ModFetcher.SourceNames));
     }
 
     /// <summary>
-    /// The extra proxy this project publishes itself. Its integrity rests on the pinned hash alone —
-    /// there is no signature this project can verify — so the pin and the file committed to the
-    /// repository must agree, or every install would download something the manager then discards.
+    /// The community d3d12.dll is no longer downloaded — upstream ships its own d3d12 entry since 0.3.0 —
+    /// but it is still recognised by hash, so an installation someone copied into a game folder by hand
+    /// stays adoptable. The recorded hash and the reference copy kept in this repository have to agree, or
+    /// recognition would silently stop working for exactly the file it was written for.
     /// </summary>
-    private static void TestPublishedExtras(string work)
+    private static void TestCommunityBuildRecognition(string work)
     {
-        Section("附加入口（仓库分发）");
+        Section("社区构建识别（按哈希）");
 
         var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var extras = ModFetcher.PublishedExtras;
+        var hashes = ModFetcher.KnownCommunityBuildHashes;
 
-        Check("至少发布了一个附加入口", extras.Count > 0, "实际: " + extras.Count);
+        Check("至少记录了一个社区构建", hashes.Count > 0, "实际: " + hashes.Count);
+        Check("记录的哈希格式正确", hashes.All(h => Regex.IsMatch(h, "^[0-9A-Fa-f]{64}$")));
 
-        foreach (var (sourcePath, destinationPath, pinned) in extras)
+        var community = Path.Combine(repoRoot, "extra-proxies", "d3d12.dll");
+        Check("仓库中保留参考副本", File.Exists(community), community);
+
+        if (File.Exists(community))
         {
-            var name = Path.GetFileName(destinationPath);
-            var file = Path.Combine(repoRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar));
+            Check("参考副本与记录的哈希一致",
+                ModFetcher.MatchesPin(community, hashes[0]),
+                $"记录 {hashes[0]}，实际 {Sha(community)}");
+            Check("参考副本被识别为社区构建", ModFetcher.IsKnownCommunityBuild(community));
 
-            Check($"{name}：固定哈希格式正确", Regex.IsMatch(pinned, "^[0-9A-Fa-f]{64}$"), pinned);
-            Check($"{name}：入口名是已知的可用入口名", ModSource.IsKnownProxyName(name), name);
-            Check($"{name}：落到 altnative\\ 下",
-                destinationPath.StartsWith("altnative/", StringComparison.OrdinalIgnoreCase), destinationPath);
-
-            Check($"{name}：仓库中存在发布文件", File.Exists(file), file);
-            if (!File.Exists(file)) continue;
-
-            Check($"{name}：仓库文件与固定哈希一致",
-                ModFetcher.MatchesPin(file, pinned),
-                $"固定 {pinned}，实际 {Sha(file)}");
-
-            Console.WriteLine($"      附加入口 {name} · {new FileInfo(file).Length / 1024 / 1024.0:F1} MB · {pinned[..16]}…");
+            Console.WriteLine($"      社区构建 d3d12.dll · {new FileInfo(community).Length / 1024 / 1024.0:F1} MB · {hashes[0][..16]}…");
         }
 
+        // The banner rule shared by the local file and the version probe.
+        Check("版本横幅解析：带说明的完整行",
+            ModSource.ReadVersionFromText("; Native 0.2.4. Restart the game after changing this file.") == "0.2.4");
+        Check("版本横幅解析：三段版本号",
+            ModSource.ReadVersionFromText("; Native 1.2.3.4.") == "1.2.3.4");
+        Check("版本横幅解析：没有横幅返回空",
+            ModSource.ReadVersionFromText("; nothing to see here") is null);
+        Check("版本横幅解析：空文本返回空", ModSource.ReadVersionFromText("") is null);
+
         // The pin has to reject bytes that do not match — a tampered or substituted file must never be
-        // published into the mod folder.
-        var sample = extras[0];
-        var repoFile = Path.Combine(repoRoot, sample.SourcePath.Replace('/', Path.DirectorySeparatorChar));
+        // treated as the community build.
+        var pinnedHash = ModFetcher.KnownCommunityBuildHashes[0];
+        var repoFile = Path.Combine(repoRoot, "extra-proxies", "d3d12.dll");
         var tampered = Path.Combine(work, "extra-tampered.dll");
 
         if (File.Exists(repoFile))
@@ -1802,13 +1838,79 @@ public static class Program
             bytes[^1] ^= 0xFF;                                  // one flipped bit is enough
             File.WriteAllBytes(tampered, bytes);
 
-            Check("改动一个字节即被固定哈希拒绝", !ModFetcher.MatchesPin(tampered, sample.Sha256));
+            Check("改动一个字节即被固定哈希拒绝", !ModFetcher.MatchesPin(tampered, pinnedHash));
+            Check("改动一个字节即不再被识别", !ModFetcher.IsKnownCommunityBuild(tampered));
         }
 
         Check("随机字节被固定哈希拒绝",
-            !ModFetcher.MatchesPin(MakeRandomFile(work, "extra-random.dll", 4096), sample.Sha256));
+            !ModFetcher.MatchesPin(MakeRandomFile(work, "extra-random.dll", 4096), pinnedHash));
+        Check("随机字节不被当成社区构建",
+            !ModFetcher.IsKnownCommunityBuild(Path.Combine(work, "extra-random.dll")));
         Check("不存在的文件被拒绝",
-            !ModFetcher.MatchesPin(Path.Combine(work, "extra-missing.dll"), sample.Sha256));
+            !ModFetcher.MatchesPin(Path.Combine(work, "extra-missing.dll"), pinnedHash));
+    }
+
+    /// <summary>
+    /// A proxy copied into a game folder by hand has to be visible to the status check and adoptable:
+    /// the community d3d12.dll carries no signature this project can verify, so recognition rests on the
+    /// pinned hash of the published copy. Without that, a game the user prepared by hand looks
+    /// undeployed and the file can never be adopted — or cleaned up by a restore.
+    /// </summary>
+    private static void TestHandInstalledExtra(string modRoot, string work)
+    {
+        Section("识别手工安装的 d3d12.dll");
+
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var published = Path.Combine(repoRoot, "extra-proxies", "d3d12.dll");
+
+        Check("仓库里有可用的发布文件", File.Exists(published), published);
+        if (!File.Exists(published)) return;
+
+        var dir = MakeGameDir(work, "GameHandInstalled");
+        File.Copy(published, Path.Combine(dir, "d3d12.dll"));
+        File.WriteAllText(Path.Combine(dir, ModSource.IniName),
+            "; Native 0.2.4. Hand-copied by the user.\r\n[Compatibility]\r\nRouter=SM86\r\n");
+
+        Check("按哈希识别为已知社区构建",
+            ModFetcher.IsKnownCommunityBuild(Path.Combine(dir, "d3d12.dll")));
+
+        var game = new GameEntry { Name = "GameHandInstalled", RenderDir = dir };
+        DeploymentService.Check(game);
+        Check("状态不是普通的「未部署」",
+            game.Status == GameStatus.NotDeployed && game.StatusDetail.Contains("接管"),
+            game.StatusText + " / " + game.StatusDetail);
+
+        var adopt = DeploymentService.Adopt(game);
+        Check("可以接管", adopt.Ok, adopt.Message);
+        Check("入口名记为 d3d12.dll", game.Deployment?.ProxyName == "d3d12.dll", game.Deployment?.ProxyName);
+
+        DeploymentService.Check(game);
+        Check("接管后状态为已部署", game.Status == GameStatus.Deployed,
+            game.StatusText + " / " + game.StatusDetail);
+
+        var restore = DeploymentService.Restore(game, removeLogs: false);
+        Check("一键恢复能删掉它",
+            restore.Ok && !File.Exists(Path.Combine(dir, "d3d12.dll")), restore.Message);
+        Check("INI 也一并清掉", !File.Exists(Path.Combine(dir, ModSource.IniName)));
+
+        // Two proxies at once is still the crash the single-proxy rule exists for, and a hand-copied
+        // extra counts towards that, not just the project-signed ones. Needs the real signed payload.
+        if (!_hasModFiles)
+        {
+            _skipped++;
+            Console.WriteLine("  [跳过] 手工入口与自带入口并存（需要 Mod 文件）");
+            return;
+        }
+
+        var conflictDir = MakeGameDir(work, "GameHandConflict");
+        File.Copy(published, Path.Combine(conflictDir, "d3d12.dll"));
+        File.Copy(Path.Combine(modRoot, "version.dll"), Path.Combine(conflictDir, "version.dll"), overwrite: true);
+
+        var conflictGame = new GameEntry { Name = "GameHandConflict", RenderDir = conflictDir };
+        DeploymentService.Check(conflictGame);
+        Check("手工入口与自带入口并存被判为异常",
+            conflictGame.Status == GameStatus.Modified && conflictGame.StatusDetail.Contains("代理"),
+            conflictGame.StatusText + " / " + conflictGame.StatusDetail);
     }
 
     /// <summary>Writes a file of random bytes and returns its path.</summary>

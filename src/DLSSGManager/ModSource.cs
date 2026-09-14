@@ -11,20 +11,28 @@ namespace DLSSGManager;
 /// </summary>
 public sealed class ModSource
 {
-    public static readonly string[] ProxyCandidates = { "version.dll", "winmm.dll", "dinput8.dll", "winhttp.dll", "dxgi.dll" };
+    /// <summary>
+    /// Entry points the project's own builds ship, in the order they are worth trying.
+    ///
+    /// The order follows upstream's own guidance: the safe names first (version, winmm, dbghelp, dinput8
+    /// sit off the D3D12 render path), the render-path proxies (dxgi, d3d12) last, because those are
+    /// called every frame and their load order is sensitive. 0.3.0 replaced winhttp.dll with d3d12.dll
+    /// and dbghelp.dll.
+    /// </summary>
+    public static readonly string[] ProxyCandidates =
+        { "version.dll", "winmm.dll", "dinput8.dll", "dbghelp.dll", "dxgi.dll", "d3d12.dll" };
 
     /// <summary>
-    /// Every name a proxy can legitimately occupy: the five above plus <c>d3d12.dll</c>, which community
-    /// builds use on games whose protection module claims the classic names first (the game itself loads
-    /// d3d12.dll later, on demand).
+    /// Every name a proxy can legitimately occupy: the six above plus <c>winhttp.dll</c>, which 0.3.0
+    /// dropped but an installation made with an older release may still have in place.
     ///
-    /// This is the *scanning* set — cleanup, quarantine detection and the multiple-proxy check — and it
-    /// is what decides whether a file the user adds is a plausible entry name. Deployment picks from
+    /// This is the *scanning* set — cleanup, quarantine detection and the multiple-proxy check — and it is
+    /// what decides whether a file the user adds is a plausible entry name. Deployment picks from
     /// <see cref="AvailableProxies"/> instead: the project's own names plus whatever has actually been
     /// added, so a name is only deployable when a DLL for it exists.
     /// </summary>
     public static readonly string[] KnownProxyNames =
-        ProxyCandidates.Concat(new[] { "d3d12.dll" }).ToArray();
+        ProxyCandidates.Concat(new[] { "winhttp.dll" }).ToArray();
 
     /// <summary>True when a file name is one a proxy of this kind can take; the check is case-insensitive.</summary>
     public static bool IsKnownProxyName(string? fileName) =>
@@ -78,7 +86,30 @@ public sealed class ModSource
                 : Loc.T("ModSource.NoDll");
 
         IsValid = (Proxies.Count > 0 || ImportedProxies.Count > 0) && File.Exists(iniPath);
-        if (IsValid) Version = ReadVersion(iniPath) ?? Loc.T("ModSource.UnknownVersion");
+        if (IsValid) Version = ReadReleaseLabel(root) ?? Loc.T("ModSource.UnknownVersion");
+    }
+
+    /// <summary>
+    /// Release label of a local payload: the INI's banner while releases carry one, otherwise the marker
+    /// file the downloader writes (the banner disappeared in 0.3.0).
+    /// </summary>
+    private static string? ReadReleaseLabel(string root)
+    {
+        var fromIni = ReadVersion(Path.Combine(root, IniName));
+        if (fromIni is not null) return fromIni;
+
+        try
+        {
+            var marker = Path.Combine(root, ModFetcher.VersionMarkerName);
+            if (!File.Exists(marker)) return null;
+
+            var text = File.ReadAllText(marker).Trim();
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static string ResolveDllPath(string root, string proxyName) =>
@@ -89,6 +120,13 @@ public sealed class ModSource
     public string DllPath(string proxyName) => ResolveDllPath(Root, proxyName);
 
     public string IniPath => Path.Combine(Root, IniName);
+
+    /// <summary>
+    /// True when the payload's INI uses the 0.2.x schema (Router / KernelImage / HardwareBilinear).
+    /// 0.3.0 replaced those with Enabled / Optimized / Preset, and the configuration panel shows whichever
+    /// set the local payload actually reads — writing the other set would be writing dead keys.
+    /// </summary>
+    public bool IsLegacySchema => IniText.Contains("Router=", StringComparison.OrdinalIgnoreCase);
 
     public string IniText
     {
@@ -113,8 +151,8 @@ public sealed class ModSource
         {
             foreach (var line in File.ReadLines(iniPath).Take(6))
             {
-                var m = Regex.Match(line, @"Native\s+([0-9]+(?:\.[0-9]+)+)");
-                if (m.Success) return m.Groups[1].Value;
+                var version = ReadVersionFromText(line);
+                if (version is not null) return version;
             }
         }
         catch
@@ -123,6 +161,19 @@ public sealed class ModSource
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Pulls the version out of INI text. Split from <see cref="ReadVersion"/> so the same rule serves
+    /// both the local file and the version probe, which only ever sees a few hundred bytes of the
+    /// published INI.
+    /// </summary>
+    public static string? ReadVersionFromText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var m = Regex.Match(text, @"Native\s+([0-9]+(?:\.[0-9]+)+)");
+        return m.Success ? m.Groups[1].Value : null;
     }
 
     /// <summary>

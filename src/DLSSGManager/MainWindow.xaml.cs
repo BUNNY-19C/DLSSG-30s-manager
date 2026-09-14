@@ -81,6 +81,8 @@ public partial class MainWindow : Window
             new Choice(1, Loc.T("Detail.Frames2X")),
             new Choice(2, Loc.T("Detail.Frames3X")),
             new Choice(3, Loc.T("Detail.Frames4X")),
+            new Choice(4, Loc.T("Detail.Frames5X")),
+            new Choice(5, Loc.T("Detail.Frames6X")),
         };
         if (frames is not null) FrameCombo.SelectedValue = frames;
 
@@ -260,33 +262,59 @@ public partial class MainWindow : Window
 
         ProbeGpuInBackground();
 
-        // A freshly downloaded exe has no mod files yet, and the download button is easy to miss.
-        // Offer the download up front so "download and run" is the whole setup.
-        if (!HasModSource) OfferFirstRunDownload();
+        // A fresh install has no mod files: the installer deliberately does not download them (no
+        // network access during setup, no half-finished downloads). Fetch them here instead, without
+        // asking — it is the one thing a new install has to do before anything else works.
+        if (!HasModSource) FetchModFilesOnFirstRun();
     }
 
     /// <summary>
-    /// Asks, once, whether to fetch the mod files now. Declining leaves the app usable — the status
-    /// banner keeps pointing at the button.
+    /// First run: detect which version upstream is publishing, then download it.
+    ///
+    /// The version probe is advisory — it reads the few hundred bytes of the published INI and reports
+    /// the banner, so the log says which version was fetched rather than only how many files arrived.
+    /// If the probe fails (a blocked endpoint, no network yet) the download runs anyway: detection must
+    /// never be the reason a fresh install cannot get its files.
     /// </summary>
-    private void OfferFirstRunDownload()
+    private void FetchModFilesOnFirstRun()
     {
+        if (_busy) return;
+
         var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
+        _log.Write(Loc.T("Fetch.AutoStart", target));
 
-        var body =
-            Loc.T("Fetch.FirstRunBody", target);
+        _busy = true;
+        var progress = UiProgress();
 
-        var answer = MessageBox.Show(this, body, Loc.T("Fetch.FirstRunTitle"),
-            MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.Yes);
-
-        if (answer == MessageBoxResult.Yes)
+        Task.Run(async () =>
         {
-            DownloadModFiles(target, update: false);
-        }
-        else
+            var detected = await ModFetcher.DetectLatestVersionAsync(CancellationToken.None).ConfigureAwait(false);
+            if (detected is not null) progress.Report(Loc.T("Fetch.AutoDetected", detected));
+
+            return await ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None,
+                                                      versionLabel: detected).ConfigureAwait(false);
+        }).ContinueWith(t =>
         {
-            _log.Write(Loc.T("Fetch.SkipLog"));
-        }
+            _busy = false;
+            var result = t.Result;
+            _log.Details(result.Lines);
+            _log.Result(result.Ok, result.Message);
+            BatchStatusText.Text = "";
+
+            RefreshModSource();
+            if (result.Ok)
+            {
+                MessageBox.Show(this,
+                    result.Message + Loc.T("Fetch.DoneBodyFirst", result.Message),
+                    Loc.T("Fetch.DoneTitleFirst"), MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                // Kept non-blocking on purpose: the toolbar button and the status banner both point at
+                // the same retry, so a failed first run still leaves a usable window.
+                _log.Write(Loc.T("Fetch.AutoFailed", result.Message));
+            }
+        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private void ProbeGpuInBackground()
@@ -351,6 +379,7 @@ public partial class MainWindow : Window
             _modSourceValid = null;
             ColorFromCode();
             ModSourceText.ToolTip = Loc.T("Toolbar.ModMissingTip");
+            ApplySettingsSchema(legacy: false);
             _log.Write(Loc.T("Fetch.NotReadyLog"));
             return;
         }
@@ -364,7 +393,22 @@ public partial class MainWindow : Window
             ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.AvailableProxies))
             : source.ValidationMessage;
 
+        ApplySettingsSchema(source.IsLegacySchema);
+
         if (!source.IsValid) _log.Write(Loc.T("Fetch.IncompleteLog", source.ValidationMessage));
+    }
+
+    /// <summary>
+    /// Shows the configuration controls the local payload actually reads.
+    ///
+    /// Upstream changed the INI schema in 0.3.0 (Enabled / Optimized / Preset replaced Router /
+    /// KernelImage / HardwareBilinear), and the manager only writes keys the template defines. Leaving
+    /// the other set on screen would offer controls that silently do nothing.
+    /// </summary>
+    private void ApplySettingsSchema(bool legacy)
+    {
+        ModernSettings.Visibility = legacy ? Visibility.Collapsed : Visibility.Visible;
+        LegacySettings.Visibility = legacy ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateMod_Click(object sender, RoutedEventArgs e)
@@ -378,7 +422,7 @@ public partial class MainWindow : Window
         var picker = new SourcePickerDialog { Owner = this };
         if (picker.ShowDialog() != true) return;
 
-        DownloadModFiles(target, update: true, picker.SelectedSourceId);
+        DownloadModFiles(target, picker.SelectedSourceId);
     }
 
     /// <summary>
@@ -430,23 +474,29 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Downloads the mod files into <paramref name="target"/>. Shared by the toolbar button and the
-    /// first-run prompt so both behave identically.
+    /// Downloads the mod files into <paramref name="target"/>, for the toolbar button.
     /// </summary>
     /// <param name="sourceId">
-    /// A specific source id, or <see cref="ModFetcher.AutoSourceId"/> to try each in turn. The
-    /// first-run prompt passes automatic, since the user has not been asked to choose yet.
+    /// A specific source id, or <see cref="ModFetcher.AutoSourceId"/> to try each in turn.
     /// </param>
-    private void DownloadModFiles(string target, bool update, string sourceId = ModFetcher.AutoSourceId)
+    private void DownloadModFiles(string target, string sourceId = ModFetcher.AutoSourceId)
     {
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         _busy = true;
-        _log.Write(update ? Loc.T("Fetch.StartLog") : Loc.T("Fetch.StartLogFirst"));
+        _log.Write(Loc.T("Fetch.StartLog"));
 
         var progress = UiProgress();
 
-        Task.Run(() => ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None, sourceId))
+        Task.Run(async () =>
+        {
+            // Same probe as the first run, so an update also names the release it fetched.
+            var detected = await ModFetcher.DetectLatestVersionAsync(CancellationToken.None).ConfigureAwait(false);
+            if (detected is not null) progress.Report(Loc.T("Fetch.AutoDetected", detected));
+
+            return await ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None, sourceId, detected)
+                .ConfigureAwait(false);
+        })
             .ContinueWith(t =>
             {
                 _busy = false;
@@ -459,11 +509,10 @@ public partial class MainWindow : Window
                 RefreshModSource();
                 if (result.Ok)
                 {
+                    // The body already starts with the result message (its {0}), so it is not repeated here.
                     MessageBox.Show(this,
-                        result.Message + (update
-                            ? Loc.T("Fetch.DoneBody", result.Message)
-                            : Loc.T("Fetch.DoneBodyFirst", result.Message)),
-                        update ? Loc.T("Fetch.DoneTitle") : Loc.T("Fetch.DoneTitleFirst"),
+                        Loc.T("Fetch.DoneBody", result.Message),
+                        Loc.T("Fetch.DoneTitle"),
                         MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());

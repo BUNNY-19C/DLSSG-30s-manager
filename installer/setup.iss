@@ -5,15 +5,12 @@
 ; 1. 安装路径可选。用户在向导里能改目录，也可以装到 C:\Program Files。
 ;
 ; 2. Mod 文件（约 75 MB）不随安装包分发——这些二进制属于上游项目、授权不允许
-;    转发——但**放在程序目录下**，让程序与其数据在一起。获取方式有两种：
-;      · 勾选安装时的下载任务（默认勾选，见 [Tasks] 的 fetchmod）；
-;      · 或首次启动时按提示下载。
-;    程序自身由安装包部署时（存在 unins*.exe）走同一套路径选择逻辑，见
-;    ModSourceLocator.ResolveTarget。
+;    转发——安装阶段也不下载。程序首次启动时会自动检测上游最新版本并获取，
+;    放进程序目录下的 mod\；若该位置不可写（装在 Program Files 且未提权），
+;    自动改放到 %APPDATA%\DLSSGManager\mod。见 ModSourceLocator.ResolveTarget。
 ;
-; 3. 在安装阶段下载有个实际好处：此时安装程序已提权，因此即使装到
-;    Program Files，也能把 Mod 文件写进程序目录。若程序目录不可写，
-;    运行时会自动改放到 %APPDATA%\DLSSGManager\mod。
+; 3. 安装阶段不做网络请求，因此安装过程不需要联网，也不会因为下载失败留下
+;    半成品。
 ;
 ; 4. 卸载时询问是否删除 Mod 文件与游戏数据。静默卸载默认全部保留，
 ;    避免自动化场景误删 75 MB 的下载。
@@ -77,28 +74,15 @@ Name: "chinese"; MessagesFile: "languages\ChineseSimplified.isl"
 ; ── 简体中文 ──────────────────────────────────────────────────────
 chinese.CreateDesktopIcon=创建桌面快捷方式
 chinese.LaunchAfterInstall=安装完成后启动
-chinese.DataDirNote=Mod 文件（约 75 MB）将放在程序目录下的 mod\ 文件夹。%n若该位置不可写（例如安装到 Program Files 且未以管理员运行），会自动改放到：%n%1
-chinese.ModFilesGroup=Mod 文件
-chinese.FetchModFiles=安装时下载 Mod 文件到程序目录（约 75 MB，需要联网）
-chinese.FetchPageTitle=正在获取 Mod 文件
-chinese.FetchPageSubTitle=从 GitHub 下载 dlssg_for_sm86，请稍候
-chinese.FetchPageText=下载并解压中，约 75 MB，通常需要一到两分钟…
-chinese.FetchFailed=Mod 文件未能下载成功。%n%n程序仍可使用，首次启动时会再次提示，也可以稍后点「下载 / 更新 Mod 文件」重试。
+chinese.DataDirNote=Mod 文件（约 75 MB）不随安装包分发，程序首次启动时会自动下载到程序目录下的 mod\ 文件夹。%n若该位置不可写（例如安装到 Program Files 且未以管理员运行），会自动改放到：%n%1
 
 ; ── English ───────────────────────────────────────────────────────
 english.CreateDesktopIcon=Create a desktop shortcut
 english.LaunchAfterInstall=Launch after installation
-english.DataDirNote=Mod files (about 75 MB) go into a mod\ folder beside the program.%nIf that location is not writable (for example, installed under Program Files without elevation), they are placed in:%n%1
-english.ModFilesGroup=Mod files
-english.FetchModFiles=Download the mod files into the program folder during setup (about 75 MB, needs a network connection)
-english.FetchPageTitle=Downloading mod files
-english.FetchPageSubTitle=Fetching dlssg_for_sm86 from GitHub, please wait
-english.FetchPageText=Downloading and extracting, about 75 MB. This usually takes one to two minutes…
-english.FetchFailed=The mod files could not be downloaded.%n%nThe program still works: it will offer to retry on first start, and you can also use “Download / update mod files” later.
+english.DataDirNote=The mod files (about 75 MB) are not bundled with the installer; the program fetches them on first start into a mod\ folder beside itself.%nIf that location is not writable (for example, installed under Program Files without elevation), they are placed in:%n%1
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "fetchmod"; Description: "{cm:FetchModFiles}"; GroupDescription: "{cm:ModFilesGroup}"
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "{#AppShortName}.exe"; Flags: ignoreversion
@@ -181,46 +165,6 @@ begin
   end
   else
     DataNoteLabel.Visible := False;
-end;
-
-{ 调用程序自身的下载器。放在安装阶段做有个实际好处：此时安装程序已提权，
-  因此即使装到 Program Files，也能把 Mod 文件写进程序目录。 }
-procedure DownloadModFiles();
-var
-  ProgressPage: TOutputProgressWizardPage;
-  ExePath: string;
-  ResultCode: Integer;
-begin
-  ExePath := ExpandConstant('{app}\{#AppShortName}.exe');
-  if not FileExists(ExePath) then
-  begin
-    MsgBox(CustomMessage('FetchFailed'), mbInformation, MB_OK);
-    exit;
-  end;
-
-  ProgressPage := CreateOutputProgressPage(
-    CustomMessage('FetchPageTitle'), CustomMessage('FetchPageSubTitle'));
-  ProgressPage.SetText(CustomMessage('FetchPageText'), '');
-  { 下载器不回报百分比，用不确定进度条避免误导。 }
-  ProgressPage.SetProgress(0, 1);
-  ProgressPage.Show();
-  try
-    if not Exec(ExePath, '--fetch --silent', ExpandConstant('{app}'),
-                SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-      ResultCode := -1;
-  finally
-    ProgressPage.Hide();
-    ProgressPage.Free();
-  end;
-
-  if ResultCode <> 0 then
-    MsgBox(CustomMessage('FetchFailed'), mbInformation, MB_OK);
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if (CurStep = ssPostInstall) and WizardIsTaskSelected('fetchmod') then
-    DownloadModFiles();
 end;
 
 { 卸载时处理两类数据：

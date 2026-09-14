@@ -44,14 +44,16 @@ public static class ModFetcher
     };
 
     /// <summary>
-    /// Certificate the project signs every proxy DLL with. Recorded from version.dll, winmm.dll,
-    /// dinput8.dll, winhttp.dll and dxgi.dll of Native 0.2.4 — all five share it.
+    /// Certificate the project signs every proxy DLL with, as 0.3.0 publishes it in its own README:
+    /// <c>CN=DLSSG for SM86 (self-signed)</c>, SHA-1 85BA66762F851E49148D706915D09026281418E6. The
+    /// previous pin (A994735E…) belonged to the 0.2.x release line, whose files are no longer part of the
+    /// payload.
     ///
-    /// A mismatch on a mirror means the file is not the project's build, so the download is
-    /// rejected. A mismatch on GitHub's own endpoints is logged as a warning instead, so upstream
-    /// rotating its self-signed certificate does not brick the updater.
+    /// A mismatch on a mirror means the file is not the project's build, so the download is rejected. A
+    /// mismatch on GitHub's own endpoints is logged as a warning instead, so upstream rotating its
+    /// self-signed certificate does not brick the updater.
     /// </summary>
-    private const string PinnedCertThumbprint = "A994735E6A7E9AA31FA926B3023B7C487DAB4850";
+    private const string PinnedCertThumbprint = "85BA66762F851E49148D706915D09026281418E6";
 
     /// <summary>Signer subject fragment used as a secondary sanity check on any source.</summary>
     private const string ExpectedSignerSubject = "DLSSG";
@@ -61,49 +63,52 @@ public static class ModFetcher
     private const string RepoPath = "sdli1995/dlssg_for_sm86";
     private const string RepoRef = "main";
 
-    /// <summary>This project's own repository, where the extra proxy builds are published.</summary>
-    private const string SelfRepo = "BUNNY-19C/DLSSG-30s-manager";
-
     /// <summary>
-    /// Tag holding those builds. A tag rather than a branch, so the address cannot change under the
-    /// manager's feet — the pinned hash below is the second lock on the same door.
+    /// File the downloader leaves in the mod folder to name the release it fetched. The shipped INI
+    /// stopped carrying a version banner in 0.3.0, so this is what the interface badge reads.
     /// </summary>
-    private const string SelfRef = "v1.7.2";
+    public const string VersionMarkerName = ".manager-version";
 
-    private sealed record Artifact(string RelativePath, bool Required, bool NeedsSignature);
+    private sealed record Artifact(string SourcePath, string DestinationPath, bool Required, bool NeedsSignature);
 
     /// <summary>
-    /// A proxy build this project publishes itself, because upstream does not ship it — the community
-    /// <c>d3d12.dll</c> entry being the case this exists for.
+    /// The payload the manager consumes, with the checks each file needs.
     ///
-    /// <paramref name="Sha256"/> is the whole integrity guarantee. There is no certificate this project
-    /// can verify for a file it did not build, so the bytes must match the recorded hash exactly, from
-    /// whichever endpoint served them, or the download is rejected and thrown away.
+    /// Source and destination are separate because upstream reorganises between releases: 0.3.0 moved the
+    /// alternate entry points from <c>altnative/</c> to <c>alternatives/</c>, dropped <c>winhttp.dll</c>
+    /// and added <c>d3d12.dll</c> and <c>dbghelp.dll</c>. Keeping the local layout fixed means an existing
+    /// install keeps working and only the download paths have to follow upstream.
     /// </summary>
-    private sealed record Extra(string SourcePath, string DestinationPath, string Sha256);
-
-    private static readonly Extra[] Extras =
-    {
-        // Provenance, licensing and the procedure for replacing this file are documented in
-        // extra-proxies/README.md and THIRD_PARTY_NOTICES.txt.
-        new("extra-proxies/d3d12.dll", "altnative/d3d12.dll",
-            "65E6F912F5D485DC56BC6B48430DF046FF06D38B8A69595B42E316E9644F7C2B"),
-    };
-
-    /// <summary>The payload the manager actually consumes, with the checks each file needs.</summary>
     private static readonly Artifact[] Payload =
     {
-        new("version.dll", true, true),
-        new("dlssg_sm86.ini", true, false),
-        new("altnative/winmm.dll", true, true),
-        new("altnative/dinput8.dll", true, true),
-        new("altnative/winhttp.dll", true, true),
-        new("altnative/dxgi.dll", true, true),
-        new("config/presets/sm86-default.ini", false, false),
-        new("config/presets/sm86-performance.ini", false, false),
-        new("README.md", false, false),
-        new("THIRD_PARTY_NOTICES.txt", false, false),
+        new("version.dll", "version.dll", true, true),
+        new("dlssg_sm86.ini", "dlssg_sm86.ini", true, false),
+        new("alternatives/winmm.dll", "altnative/winmm.dll", true, true),
+        new("alternatives/dinput8.dll", "altnative/dinput8.dll", true, true),
+        new("alternatives/dbghelp.dll", "altnative/dbghelp.dll", true, true),
+        new("alternatives/dxgi.dll", "altnative/dxgi.dll", true, true),
+        new("alternatives/d3d12.dll", "altnative/d3d12.dll", true, true),
+        new("README.md", "README.md", false, false),
+        new("THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt", false, false),
     };
+
+    /// <summary>
+    /// Community builds this manager recognises by hash but no longer distributes.
+    ///
+    /// The community <c>d3d12.dll</c> predates upstream shipping its own d3d12 entry, and people who
+    /// installed it by hand still have it in a game folder. A hash is the only proof available for a file
+    /// carrying no certificate this project can verify, and without it such an install looks undeployed
+    /// and can never be adopted or cleaned up. Recognising it costs nothing; distributing it would mix a
+    /// pre-0.3.0 build with a 0.3.0 INI, which is why the download is gone.
+    /// </summary>
+    public static IReadOnlyList<string> KnownCommunityBuildHashes { get; } = new[]
+    {
+        "65E6F912F5D485DC56BC6B48430DF046FF06D38B8A69595B42E316E9644F7C2B",
+    };
+
+    /// <summary>True when the file's bytes match a community build this manager still recognises.</summary>
+    public static bool IsKnownCommunityBuild(string path) =>
+        KnownCommunityBuildHashes.Any(hash => MatchesPin(path, hash));
 
     /// <summary>
     /// A download endpoint.
@@ -122,7 +127,72 @@ public static class ModFetcher
     }
 
     /// <summary>
-    /// True when the file's bytes match the pinned hash.
+    /// Address of the version probe: the published INI on the default branch, through an official
+    /// per-file endpoint. Exposed so the URL policy test covers it like every other address this
+    /// downloader can contact.
+    /// </summary>
+    public static string VersionProbeUrl => UrlFor(OfficialFileSource(), RepoPath, RepoRef, ModSource.IniName);
+
+    /// <summary>An official per-file endpoint, used for probes that fetch a single small file.</summary>
+    private static Source OfficialFileSource() => Sources.First(s => !s.IsArchive && s.Official);
+
+    /// <summary>The upstream README, the second and last version probe.</summary>
+    private static string ReadmeUrl => UrlFor(OfficialFileSource(), RepoPath, RepoRef, "README.md");
+
+    /// <summary>
+    /// Reads which release upstream is publishing, without downloading the payload.
+    ///
+    /// Two probes, cheapest first: the INI's own <c>; Native x.y.z.</c> banner while that exists, and
+    /// otherwise the version in the README's title (0.3.0 dropped the banner and moved the number there).
+    /// Advisory only: the download goes through the normal source chain, and a failed probe returns null,
+    /// because a blocked endpoint must never be the reason a first run cannot get its files.
+    /// </summary>
+    public static async Task<string?> DetectLatestVersionAsync(CancellationToken ct)
+    {
+        foreach (var probe in new[] { VersionProbeUrl, ReadmeUrl })
+        {
+            try
+            {
+                using var client = CreateClient();
+                using var response = await GetCheckedAsync(client, new Uri(probe), ct).ConfigureAwait(false);
+
+                var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                var version = ModSource.ReadVersionFromText(text) ?? ReadVersionFromReadme(text);
+                if (version is not null) return version;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                AppPaths.Log("探测上游版本失败（" + probe + "）: " + ex.Message);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Pulls the release number out of the README's title, e.g. "# DLSSG for SM86（Proxy）- 0.3.0 版本".
+    /// Only the first heading is searched: the dotted numbers further down are about the bundled runtime
+    /// generations (310.9, 310.1) and are not the release number.
+    /// </summary>
+    private static string? ReadVersionFromReadme(string text)
+    {
+        foreach (var line in text.Split('\n').Take(10))
+        {
+            if (!line.StartsWith('#')) continue;
+
+            var m = System.Text.RegularExpressions.Regex.Match(line, @"([0-9]+\.[0-9]+(?:\.[0-9]+)+)");
+            if (m.Success) return m.Groups[1].Value;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// True when the file's bytes match a published community build.
     ///
     /// Extracted so the rule that matters — a mismatch means the bytes are discarded, from whichever
     /// endpoint they came — is exercised by a test rather than only by a live download.
@@ -139,17 +209,10 @@ public static class ModFetcher
         }
     }
 
-    /// <summary>
-    /// The published extras, for tests that check the pin against the file committed to the repository.
-    /// The two must agree, or every install would download a file the manager then throws away.
-    /// </summary>
-    public static IReadOnlyList<(string SourcePath, string DestinationPath, string Sha256)> PublishedExtras =>
-        Extras.Select(e => (e.SourcePath, e.DestinationPath, e.Sha256)).ToArray();
-
     private static readonly Source[] Sources =
     {
-        // Templates carry {repo}/{ref}/{path} rather than a baked-in repository, because the same list
-        // also serves the extras published in this project's own repository.
+        // Templates carry {repo}/{ref}/{path} rather than a baked-in repository, so the list can serve
+        // more than one repository without duplicating every endpoint.
         //
         // One request, compressed (~28 MB). Preferred when reachable.
         new("codeload", "Fetch.SourceCodeload", true,
@@ -193,17 +256,6 @@ public static class ModFetcher
     {
         var source = Sources.First(s => string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase));
         return UrlFor(source, RepoPath, RepoRef, null);
-    }
-
-    /// <summary>Addresses used to fetch an extra from this project's repository, per source.</summary>
-    public static List<string> ExtraUrls()
-    {
-        var result = new List<string>();
-        foreach (var source in Sources.Where(s => !s.IsArchive))
-            foreach (var extra in Extras)
-                result.Add(UrlFor(source, SelfRepo, SelfRef, extra.SourcePath));
-
-        return result;
     }
 
     /// <summary>
@@ -360,11 +412,17 @@ public static class ModFetcher
     /// chose it deliberately, and silently downloading from elsewhere would misreport where the files
     /// came from and defeat the point of choosing.
     /// </summary>
+    /// <param name="versionLabel">
+    /// What <see cref="DetectLatestVersionAsync"/> reported before the download, recorded beside the
+    /// payload so the interface can name the installed release. Optional: a download must not depend on
+    /// the probe having succeeded.
+    /// </param>
     public static async Task<OpResult> DownloadIntoAsync(
         string destination,
         IProgress<string>? progress,
         CancellationToken ct,
-        string? sourceId = null)
+        string? sourceId = null,
+        string? versionLabel = null)
     {
         var sources = ActiveSources(sourceId);
         var singleSource = sources.Count == 1 && IsExplicitChoice(sourceId);
@@ -387,7 +445,7 @@ public static class ModFetcher
                 if (attempt > 1)
                     await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
 
-                var result = await AttemptAsync(source, destination, progress, ct).ConfigureAwait(false);
+                var result = await AttemptAsync(source, destination, progress, ct, versionLabel).ConfigureAwait(false);
                 if (result.Ok) return result;
 
                 AppPaths.Log(Loc.T("Fetch.AttemptFailed", source.Name, attempt, attemptsPerSource, result.Message));
@@ -406,7 +464,12 @@ public static class ModFetcher
         !string.IsNullOrWhiteSpace(sourceId) &&
         !string.Equals(sourceId, AutoSourceId, StringComparison.OrdinalIgnoreCase);
 
-    private static async Task<OpResult> AttemptAsync(Source source, string destination, IProgress<string>? progress, CancellationToken ct)
+    private static async Task<OpResult> AttemptAsync(
+        Source source,
+        string destination,
+        IProgress<string>? progress,
+        CancellationToken ct,
+        string? versionLabel)
     {
         var r = new OpResult();
         var staging = Path.Combine(Path.GetTempPath(), "dlssg_" + Guid.NewGuid().ToString("N"));
@@ -430,12 +493,15 @@ public static class ModFetcher
                 return r;
             }
 
-            // Extras come after the payload is known good, and never fail the attempt: they are
-            // additions, and the mod files are what the user came for.
-            await FetchExtrasAsync(source, destination, staging, r, progress, ct).ConfigureAwait(false);
-
             var copied = Publish(staging, destination);
-            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName));
+            PruneSupersededEntries(destination, r);
+            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName)) ?? versionLabel;
+
+            // The shipped INI stopped carrying a version banner in 0.3.0, so the label detected before
+            // the download is remembered on disk — otherwise the badge would have nothing to show and
+            // the next start could not tell which release is installed.
+            if (!string.IsNullOrWhiteSpace(versionLabel))
+                TryWriteVersionMarker(destination, versionLabel!);
 
             r.Note(Loc.T("Fetch.Updated", copied, destination));
             r.Message = version is null
@@ -520,10 +586,10 @@ public static class ModFetcher
         foreach (var artifact in Payload)
         {
             ct.ThrowIfCancellationRequested();
-            progress?.Report(Loc.T("Fetch.Downloading", artifact.RelativePath, done + 1, Payload.Length));
+            progress?.Report(Loc.T("Fetch.Downloading", artifact.SourcePath, done + 1, Payload.Length));
 
-            var url = new Uri(UrlFor(source, RepoPath, RepoRef, artifact.RelativePath));
-            var target = Path.Combine(staging, artifact.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var url = new Uri(UrlFor(source, RepoPath, RepoRef, artifact.SourcePath));
+            var target = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
 
             // Nested entries such as altnative/winmm.dll need their folder to exist before writing.
             var targetDir = Path.GetDirectoryName(target);
@@ -549,116 +615,11 @@ public static class ModFetcher
             catch (Exception ex) when (!artifact.Required)
             {
                 // Optional files (readme, presets) may legitimately be absent; note and move on.
-                r.Note(Loc.T("Fetch.SkippedOptional", artifact.RelativePath, ex.Message));
+                r.Note(Loc.T("Fetch.SkippedOptional", artifact.SourcePath, ex.Message));
             }
         }
 
         r.Note(Loc.T("Fetch.DownloadedCount", $"{total / 1024 / 1024.0:F1}", done, Payload.Length));
-    }
-
-    /// <summary>
-    /// Fetches the extra proxy builds this project publishes, skipping any the destination already has.
-    ///
-    /// The main source list cannot be reused as-is: codeload and the API serve archives only, and an
-    /// extra is a single file. So the user's chosen source is tried first when it can serve a file, then
-    /// the remaining per-file sources in order. Trying an endpoint the user did not pick is acceptable
-    /// *here* precisely because the content is hash-pinned — a mirror has no authority over what is
-    /// accepted, only over whether the bytes arrive.
-    /// </summary>
-    private static async Task FetchExtrasAsync(
-        Source mainSource,
-        string destination,
-        string staging,
-        OpResult r,
-        IProgress<string>? progress,
-        CancellationToken ct)
-    {
-        if (Extras.Length == 0) return;
-
-        var candidates = new List<Source>();
-        if (!mainSource.IsArchive) candidates.Add(mainSource);
-        candidates.AddRange(Sources.Where(s => !s.IsArchive && !candidates.Contains(s)));
-
-        foreach (var extra in Extras)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var name = Path.GetFileName(extra.DestinationPath);
-            var existing = Path.Combine(destination, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar));
-
-            if (File.Exists(existing))
-            {
-                // Our own earlier copy is simply up to date. A different file is the user's — their own
-                // build, or a newer one they added by hand — and is left alone.
-                r.Note(MatchesPin(existing, extra.Sha256)
-                    ? Loc.T("Fetch.ExtraPresent", name)
-                    : Loc.T("Fetch.ExtraKept", name));
-                continue;
-            }
-
-            progress?.Report(Loc.T("Fetch.ExtraStart", name));
-
-            var staged = Path.Combine(staging, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar));
-            var ok = false;
-            var failure = "";
-            var servedBy = "";
-
-            foreach (var candidate in candidates)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                try
-                {
-                    using var client = CreateClient();
-                    using var response = await GetCheckedAsync(
-                        client, new Uri(UrlFor(candidate, SelfRepo, SelfRef, extra.SourcePath)), ct).ConfigureAwait(false);
-
-                    var dir = Path.GetDirectoryName(staged);
-                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-                    await using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-                    await using (var output = File.Create(staged))
-                    {
-                        var buffer = new byte[81920];
-                        long total = 0;
-                        int read;
-                        while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                        {
-                            total += read;
-                            if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ContentTooLarge"));
-                            await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                        }
-                    }
-
-                    if (!MatchesPin(staged, extra.Sha256))
-                    {
-                        var actual = DeploymentService.Sha256(staged);
-                        TryDelete(staged);
-                        failure = Loc.T("Fetch.ExtraHashMismatch", extra.Sha256, actual);
-                        continue;
-                    }
-
-                    ok = true;
-                    servedBy = candidate.Name;
-                    break;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    failure = ex.Message;
-                }
-            }
-
-            if (ok) r.Note(Loc.T("Fetch.ExtraReady", name, servedBy));
-            else
-            {
-                TryDelete(staged);
-                r.Note(Loc.T("Fetch.ExtraFailed", name, failure));
-            }
-        }
     }
 
     /// <summary>
@@ -667,8 +628,8 @@ public static class ModFetcher
     /// </summary>
     private static (bool Accepted, string Message) Verify(string staging, bool officialSource)
     {
-        var missing = Payload.Where(a => a.Required && !File.Exists(Path.Combine(staging, a.RelativePath)))
-                             .Select(a => a.RelativePath)
+        var missing = Payload.Where(a => a.Required && !File.Exists(Path.Combine(staging, a.SourcePath)))
+                             .Select(a => a.SourcePath)
                              .ToList();
         if (missing.Count > 0)
             return (false, Loc.T("Fetch.Incomplete", Loc.Join(missing)));
@@ -678,7 +639,7 @@ public static class ModFetcher
 
         foreach (var artifact in Payload.Where(a => a.NeedsSignature))
         {
-            var path = Path.Combine(staging, artifact.RelativePath);
+            var path = Path.Combine(staging, artifact.SourcePath);
 
             // X509Certificate2 is needed for Thumbprint; the static loader returns the base type.
             X509Certificate2? cert;
@@ -688,7 +649,7 @@ public static class ModFetcher
             }
             catch
             {
-                unsigned.Add(Path.GetFileName(artifact.RelativePath));
+                unsigned.Add(Path.GetFileName(artifact.SourcePath));
                 continue;
             }
 
@@ -696,9 +657,9 @@ public static class ModFetcher
             {
                 var subject = cert.Subject ?? "";
                 if (!subject.Contains(ExpectedSignerSubject, StringComparison.OrdinalIgnoreCase))
-                    unsigned.Add(Path.GetFileName(artifact.RelativePath));
+                    unsigned.Add(Path.GetFileName(artifact.SourcePath));
                 else if (!string.Equals(cert.Thumbprint, PinnedCertThumbprint, StringComparison.OrdinalIgnoreCase))
-                    pinMismatch.Add(Path.GetFileName(artifact.RelativePath));
+                    pinMismatch.Add(Path.GetFileName(artifact.SourcePath));
             }
         }
 
@@ -721,32 +682,78 @@ public static class ModFetcher
         return (true, Loc.T("Fetch.SignatureOk"));
     }
 
-    /// <summary>Copies the verified payload into the destination, preserving relative paths.</summary>
+    /// <summary>
+    /// Copies the verified payload from the staging folder into the mod folder.
+    ///
+    /// Staging mirrors the repository layout; the destination maps each file to the manager's own layout,
+    /// which is why the two paths are configured separately on <see cref="Artifact"/>.
+    /// </summary>
     private static int Publish(string staging, string destination)
     {
         var copied = 0;
 
         foreach (var artifact in Payload)
         {
-            var source = Path.Combine(staging, artifact.RelativePath);
+            var source = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
             if (!File.Exists(source)) continue;
 
-            CopyInto(source, Path.Combine(destination, artifact.RelativePath.Replace('/', Path.DirectorySeparatorChar)), destination);
-            copied++;
-        }
-
-        // Extras that arrived are published alongside the payload; the ones that were skipped (already
-        // present, or failed) are simply not staged.
-        foreach (var extra in Extras)
-        {
-            var source = Path.Combine(staging, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(source)) continue;
-
-            CopyInto(source, Path.Combine(destination, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar)), destination);
+            CopyInto(source, Path.Combine(destination, artifact.DestinationPath.Replace('/', Path.DirectorySeparatorChar)), destination);
             copied++;
         }
 
         return copied;
+    }
+
+    /// <summary>
+    /// Removes proxy DLLs left over from an earlier release that the current payload no longer ships.
+    ///
+    /// 0.3.0 dropped winhttp.dll, and a stale file would sit in the mod folder looking like an entry the
+    /// user added themselves — while pairing a previous generation's build with the new INI, which is a
+    /// combination neither generation supports. Only files carrying the project's own signature are
+    /// removed, so anything the user brought along survives whatever its name.
+    /// </summary>
+    private static void PruneSupersededEntries(string destination, OpResult r)
+    {
+        var shipped = Payload
+            .Select(a => Path.GetFileName(a.DestinationPath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in ModSource.KnownProxyNames)
+        {
+            if (shipped.Contains(name)) continue;
+
+            var path = ModSource.ResolveDllPath(destination, name);
+            if (!File.Exists(path) || !DeploymentService.IsProjectSigned(path)) continue;
+
+            try
+            {
+                File.Delete(path);
+                r.Note(Loc.T("Fetch.PrunedStale", name));
+            }
+            catch (Exception ex)
+            {
+                AppPaths.Log("清理旧入口失败（" + name + "）: " + ex.Message);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records which release the payload came from, for the interface badge and the log.
+    ///
+    /// The shipped INI stopped carrying a version banner in 0.3.0, so a release label cannot be read off
+    /// the files themselves any more. Best effort: failing to write the label must never fail a download
+    /// that already succeeded.
+    /// </summary>
+    private static void TryWriteVersionMarker(string destination, string label)
+    {
+        try
+        {
+            File.WriteAllText(Path.Combine(destination, VersionMarkerName), label, new System.Text.UTF8Encoding(false));
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("写入版本标记失败: " + ex.Message);
+        }
     }
 
     /// <summary>Rejects any path that would escape the destination folder.</summary>

@@ -127,7 +127,8 @@ public static class LibraryStore
         g.Profile = g.Profile ?? new GameProfile();
         g.Profile.Router = NormalizeRouter(g.Profile.Router);
         g.Profile.KernelImage = NormalizeKernel(g.Profile.KernelImage);
-        g.Profile.MaxGeneratedFrames = Math.Clamp(g.Profile.MaxGeneratedFrames, 1, 3);
+        g.Profile.Preset = NormalizePreset(g.Profile.Preset);
+        g.Profile.MaxGeneratedFrames = Math.Clamp(g.Profile.MaxGeneratedFrames, 1, 5);
         g.Profile.LogLevel = Math.Clamp(g.Profile.LogLevel, 0, 3);
         if (g.Deployment is not null)
         {
@@ -135,6 +136,14 @@ public static class LibraryStore
             g.Deployment.Files ??= new List<DeployedFile>();
         }
     }
+
+    /// <summary>Auto (let the game or driver profile decide), A (force UI recomposition off) or B (on).</summary>
+    public static string NormalizePreset(string? value) => value?.Trim().ToUpperInvariant() switch
+    {
+        "A" => "A",
+        "B" => "B",
+        _ => "Auto",
+    };
 
     public static string NormalizeRouter(string? value) =>
         string.Equals(value, "SM75", StringComparison.OrdinalIgnoreCase) ? "SM75" : "SM86";
@@ -154,72 +163,78 @@ public static class LibraryStore
 }
 
 /// <summary>
-/// The shipped dlssg_sm86.ini is mostly comments; it is used verbatim as a template and only
-/// the five documented keys are rewritten. Unknown diagnostic keys the user added survive untouched.
+/// The shipped dlssg_sm86.ini is mostly comments; it is used verbatim as a template and only the keys it
+/// actually contains are rewritten.
+///
+/// That last part is deliberate: upstream changed the schema between releases (0.3.0 has Enabled,
+/// Optimized and Preset; the 0.2.x line had Router, KernelImage and HardwareBilinear). Writing keys a
+/// build does not know would leave dead settings in every deployed INI, so a key that the template does
+/// not define is simply not written.
 /// </summary>
 public static class IniTemplate
 {
-    private static readonly string[] Keys = { "Router", "KernelImage", "HardwareBilinear", "MaxGeneratedFrames", "Level" };
+    /// <summary>
+    /// Values for the keys the manager exposes. Harmless to include all of them: only the ones present in
+    /// the template are written.
+    /// </summary>
+    private static Dictionary<string, string> Values(GameProfile p) => new(StringComparer.OrdinalIgnoreCase)
+    {
+        // 0.3.0
+        ["Enabled"] = p.Enabled ? "1" : "0",
+        ["Optimized"] = p.Optimized ? "1" : "0",
+        ["Preset"] = p.Preset,
+        ["MaxGeneratedFrames"] = Math.Clamp(p.MaxGeneratedFrames, 1, 5).ToString(),
+        ["Level"] = Math.Clamp(p.LogLevel, 0, 3).ToString(),
+
+        // 0.2.x (kept so an older payload still receives the user's settings)
+        ["Router"] = p.Router,
+        ["KernelImage"] = p.KernelImage,
+        ["HardwareBilinear"] = p.HardwareBilinear ? "1" : "0",
+    };
 
     public static string Render(string templateText, GameProfile p)
     {
         var text = string.IsNullOrWhiteSpace(templateText) ? FallbackTemplate(p) : templateText;
         var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
 
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Router"] = p.Router,
-            ["KernelImage"] = p.KernelImage,
-            ["HardwareBilinear"] = p.HardwareBilinear ? "1" : "0",
-            ["MaxGeneratedFrames"] = Math.Clamp(p.MaxGeneratedFrames, 1, 3).ToString(),
-            ["Level"] = Math.Clamp(p.LogLevel, 0, 3).ToString(),
-        };
+        var values = Values(p);
 
-        var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < lines.Count; i++)
         {
             var m = Regex.Match(lines[i], @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=");
             if (!m.Success) continue;
             var key = m.Groups[1].Value;
             if (values.TryGetValue(key, out var v))
-            {
                 lines[i] = $"{key}={v}";
-                written.Add(key);
-            }
-        }
-
-        foreach (var key in Keys)
-        {
-            if (written.Contains(key)) continue;
-            var section = key == "MaxGeneratedFrames" ? "[FrameGeneration]" : key == "Level" ? "[Logging]" : "[Compatibility]";
-            var at = lines.FindIndex(l => l.Trim().Equals(section, StringComparison.OrdinalIgnoreCase));
-            if (at >= 0) lines.Insert(at + 1, $"{key}={values[key]}");
-            else lines.AddRange(new[] { "", section, $"{key}={values[key]}" });
         }
 
         var body = string.Join("\r\n", lines);
 
         if (p.Diagnostics && !body.Contains("[Diagnostics]", StringComparison.OrdinalIgnoreCase))
         {
+            // A 0.2.x profiling section. 0.3.0 moved the equivalent knobs into its README and ignores an
+            // unknown section, so appending it stays harmless.
             body += "\r\n\r\n[Diagnostics]\r\n; 记录异步 GPU 计时；PipelineSteps=1 会明显影响性能，仅用于剖析。\r\nPerformance=1\r\nPipelineSteps=0\r\n";
         }
 
         return body.TrimEnd() + "\r\n";
     }
 
+    /// <summary>
+    /// Used only when no template could be read at all, so it mirrors the current upstream schema.
+    /// </summary>
     private static string FallbackTemplate(GameProfile p) => string.Join("\r\n", new[]
     {
         $"; Generated by DLSSG 30 系管理器 on {DateTime.Now:yyyy-MM-dd HH:mm:ss}. Restart the game after changing this file.",
-        "[Compatibility]",
-        "Router=SM86",
-        "KernelImage=PTX",
-        "HardwareBilinear=0",
+        "[General]",
+        "Enabled=1",
         "",
         "[FrameGeneration]",
-        "MaxGeneratedFrames=3",
+        "Optimized=1",
+        $"MaxGeneratedFrames={Math.Clamp(p.MaxGeneratedFrames, 1, 5)}",
         "",
         "[Logging]",
-        "Level=1",
+        $"Level={Math.Clamp(p.LogLevel, 0, 3)}",
     });
 
     /// <summary>Rewrites the keys but leaves a stray user section header comment count alone.</summary>

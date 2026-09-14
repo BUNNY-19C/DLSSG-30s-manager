@@ -46,7 +46,7 @@ The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry n
 - [Anti-cheat: risk assessment, your call](#anti-cheat-risk-assessment-your-call)
 - [About GPUs](#about-gpus)
 - [Updating the mod files](#updating-the-mod-files)
-- [Extra entries: d3d12 and your own DLLs](#extra-entries-d3d12-and-your-own-dlls)
+- [Entry names and your own DLLs](#entry-names-and-your-own-dlls)
 - [Repository layout](#repository-layout)
 - [Theme and localisation](#theme-and-localisation)
 - [Building from source](#building-from-source)
@@ -65,13 +65,13 @@ Download from [**Releases**](../../releases/latest) — two options:
 
 Neither requires .NET or any other runtime.
 
-The mod files (about 75 MB) are not bundled with the installer — the program fetches them. **The installer can download them during setup**, and the portable build offers to do so on first start.
+The mod files (about 75 MB) are not bundled with the installer, and setup does not download them either — installing needs no network at all. The program detects the newest published version on first start and fetches it, writing the version it got into the log.
 
 ### About the installer
 
 The wizard asks for the install language first (Simplified Chinese or English), then the install location (default `C:\Program Files\DLSSG 30-Series Manager`, changeable).
 
-It includes a **Mod files** task group; ticking it downloads the payload during setup (about 75 MB). Doing it at that point has a practical advantage: the installer is already elevated, so the files can be written into the program folder **even when installing to `Program Files`**.
+Setup installs the program only: pick a language, pick a folder, no network, no downloads. (Forgetting about the rest is fine — the first start fetches the mod files by itself.)
 
 Where the mod files end up:
 
@@ -106,29 +106,30 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 
 This repository **does not contain** the mod binaries (about 75 MB, and their licence does not permit redistribution — see [docs/mod-files.md](docs/mod-files.md)).
 
-You need the .NET 8 SDK; see [Building from source](#building-from-source). The first run offers to fetch the mod files, exactly as the released build does.
+You need the .NET 8 SDK; see [Building from source](#building-from-source). The first run fetches the mod files by itself, exactly as the released build does.
 
 ---
 
 ## Interface
 
-The toolbar shows the current mod file source and your GPU; its right-hand side holds the scan, download and “Add proxy DLL…” buttons (the last of these is covered under [extra entries](#extra-entries-d3d12-and-your-own-dlls)). Top right has four controls:
+The toolbar shows the current mod file source and your GPU; its right-hand side holds the scan, download and “Add proxy DLL…” buttons (the last of these is covered under [entry names](#entry-names-and-your-own-dlls)). Top right has four controls:
 
 - **Restart as administrator** — needed when the game lives under `C:\Program Files`, where writing requires elevation. Restarts through a UAC prompt.
 - **Open data folder** — opens `%APPDATA%\DLSSGManager`, which holds the configuration and backups.
 - **Theme** — switches the interface between dark and light, applied immediately and remembered.
 - **Language** — switches the interface between Simplified Chinese and English, applied immediately and remembered.
 
-Every field in the detail panel maps directly onto the mod's INI keys (see the author's [INI documentation](https://github.com/sdli1995/dlssg_for_sm86/blob/main/docs/NATIVE_INI.md)):
+Every field in the detail panel maps directly onto the mod's INI keys (upstream documents them under "Advanced keys"):
 
 | Field | INI key | Notes |
 |---|---|---|
-| GPU route | `Router` | `SM86` for RTX 30 series, `SM75` for RTX 20 series |
-| Kernel image | `KernelImage` | `PTX` (driver JIT) by default; `Cubin` requires an exact architecture match |
-| Frame multiplier | `MaxGeneratedFrames` | 1/2/3 map to 2X/3X/4X. The game decides the actual multiplier |
+| Enable frame generation | `Enabled` | Off falls back to the game's own DLSS-G, which means no frame generation on Ampere |
+| Optimized kernels | `Optimized` | On by default. Off keeps the runtime's stock numerics, matching the vendor output |
+| Render preset | `Preset` | 310.9 builds only: `Auto` lets the game or driver profile decide, `A` forces UI recomposition off, `B` on |
+| Frame multiplier | `MaxGeneratedFrames` | 1–5 map to 2X–6X (310.9 package; the 310.1 package tops out at 4X). The game decides the actual multiplier |
 | Log level | `Level` | Set to 2 when troubleshooting; logs land in `dlssg_sm86\logs` inside the game folder |
-| Approximate sampling | `HardwareBilinear` | Off by default (exact output). Enabling it changes generated pixels; SM86 only |
-| Diagnostic timings | `[Diagnostics]` | Records GPU timings; for profiling only, costs performance |
+
+The panel shows whichever set the mod source's INI actually defines: 0.3.0 uses the fields above, and an older 0.2.x payload shows `Router` / `KernelImage` / `HardwareBilinear` instead. The manager only writes keys the template contains, so one generation's keys never end up in the other's INI.
 
 Configuration is stored **per game**; re-deploy to write changes.
 
@@ -145,10 +146,10 @@ Game folders often already contain other mods (ReShade's `dxgi.dll`, for instanc
 What that means in practice:
 
 - **Anti-cheat games get a warning first** — kernel-level anti-cheat may block the proxy DLL and carries account risk, so the manager lays out the evidence before deploying and writes nothing until you confirm. See [the anti-cheat section](#anti-cheat-risk-assessment-your-call).
-- **An occupied entry name is never overwritten**: the manager picks a free name from the available entries: the five bundled ones first (`version.dll` → `winmm.dll` → `dinput8.dll` → `winhttp.dll` → `dxgi.dll`), then anything you added. If all of them are taken it reports the conflict and leaves everything untouched.
+- **An occupied entry name is never overwritten**: the manager picks a free name from the available entries: the six bundled ones first, in upstream's own order (`version.dll` → `winmm.dll` → `dinput8.dll` → `dbghelp.dll` → `dxgi.dll` → `d3d12.dll`), then anything you added. If all of them are taken it reports the conflict and leaves everything untouched.
 - **Restore only deletes its own files**: a hash mismatch means the file is kept and reported, never deleted blindly.
 - **A running game blocks the operation**: both deploy and restore check for processes inside the render directory first.
-- **Existing manual installs can be adopted**, bringing them under management so restore works later.
+- **Existing manual installs can be adopted**, bringing them under management so restore works later. A hand-copied `d3d12.dll` is included in that: it carries no signature from this project, so it is recognised by its pinned hash.
 
 ---
 
@@ -237,16 +238,16 @@ When the two disagree the manager warns and suggests putting the name back: a wr
 
 Click “Download / update mod files”. Sources are tried in order until one succeeds:
 
-> Besides the upstream mod files, this step also fetches `d3d12.dll` from this repository (about 10 MB, verified against a pinned hash, skipped if already present) — the entry Zenless Zone Zero needs. See [extra entries](#extra-entries-d3d12-and-your-own-dlls).
+> The 0.3.0 payload is larger than before: about 101 MB compressed, six entry DLLs of roughly 17.5 MB each. This step fetches all six.
 
 | Order | Source | Notes |
 |---|---|---|
-| 1 | GitHub archive (codeload) | One request, about 28 MB, fastest |
-| 2 | GitHub API (zipball) | Same content, different entry point, for when codeload is throttled |
-| 3 | GitHub raw files | Per-file, about 75 MB, a different network path |
-| 4 | gh-proxy (China accelerator) | China-based node, measured fastest here (15 MB in under a second) |
-| 5 | jsDelivr CDN mirror | A public CDN, for when GitHub is unreachable |
-| 6 | ghfast (China accelerator) | China-based node, per-file download only |
+| 1 | GitHub archive (codeload) | One request, about 101 MB |
+| 2 | GitHub API (zipball) | Same content, different entry point |
+| 3 | GitHub raw files | Per-file, about 110 MB; reachable from China without a proxy (measured 2026-09-14) |
+| 4 | ghfast (China accelerator) | China-based node, per-file only; verified working |
+| 5 | jsDelivr CDN mirror | Serves a cached branch snapshot, so it can lag by hours; a stale payload fails the certificate pin and the next source is used |
+| 6 | gh-proxy (China accelerator) | Used to be the fastest node here; on 2026-09-14 it answers 403 for every path in this repository, so it is tried last |
 
 **Clicking “Download / update mod files” opens a picker first**, where you can name a source or leave it on the default “Automatic” (try each in turn, falling back when one is unavailable). Choosing a specific source uses only that one and will not quietly switch elsewhere, so the source in the log is trustworthy.
 
@@ -270,19 +271,17 @@ That last point matters for the mirror: a mirror is not the authority for the co
 
 You can also place the files yourself: put `version.dll`, `dlssg_sm86.ini` and `altnative\` into `mod\`; the manager recognises them by the folder structure. See [docs/mod-files.md](docs/mod-files.md).
 
-## Extra entries: d3d12 and your own DLLs
+## Entry names and your own DLLs
 
-Upstream ships five entry names: `version.dll`, `winmm.dll`, `dinput8.dll`, `winhttp.dll`, `dxgi.dll`. An entry name is simply the DLL name the game will load; the proxy only enters the process if the game loads that name. Some games' protection modules watch those five, so the community builds other entries. `d3d12.dll` is the common one, because the game loads it dynamically when it initialises its DX12 backend, by which point the protection module has already claimed its names.
+0.3.0 ships **six entry names**: `version.dll` in the root, plus `winmm.dll`, `dinput8.dll`, `dbghelp.dll`, `dxgi.dll` and `d3d12.dll` under `alternatives\`. An entry name is simply the DLL name the game will load; the proxy only enters the process if the game loads that name, and a wrong name means a deployment that does nothing at all.
 
-**This repository ships that file, so there is nothing to hunt for.** “Download / update mod files” fetches it (the installer's *Mod files* task does the same) and drops it at `mod\altnative\d3d12.dll`, after which it shows up in every game's “Proxy entry” picker.
-
-The manager has no signature it can verify for that file, so it pins a SHA-256 instead: bytes that do not match are thrown away, whichever mirror served them. The hash lives in the source (`ModFetcher.Extras`); provenance and composition are in [extra-proxies/README.md](extra-proxies/README.md).
+The manager fetches all six (into `mod\altnative\`) and offers them in every game's “Proxy entry” picker. The order follows upstream's own advice: names off the D3D12 render path first (`version` → `winmm` → `dbghelp` → `dinput8`), with `dxgi` and `d3d12` last, because those are called every frame and their load order is sensitive.
 
 ### Which entry Zenless Zone Zero needs
 
-Zenless Zone Zero is the case where you must switch entries. Its HoYoKProtect watches the game folder and renames away anything called `version.dll` or another bundled entry name, after which the game reports `Error Code:(0,11008,2195210578)`. Only the community-built `d3d12.dll` survived in testing.
+Zenless Zone Zero is the case where you must switch entries. Its HoYoKProtect watches the game folder and renames away anything called `version.dll` or another classic entry name, after which the game reports `Error Code:(0,11008,2195210578)`. The community-built `d3d12.dll` survived in testing, and 0.3.0 ships a d3d12 entry of its own — so picking `d3d12.dll` in the entry picker is all there is to it, with no file to hunt down.
 
-There is exactly one thing to do: set “Proxy entry” from *Automatic* to `d3d12.dll` and deploy. The manager has already downloaded that DLL, so there is nowhere else to look for it.
+If you installed the community d3d12.dll by hand earlier: it belongs to the previous generation, and pairing it with a 0.3.0 INI is meaningless, so restore first and deploy the manager's copy. That file is still recognised by its pinned hash, so “Check status” offers to adopt it and a restore removes exactly what it recorded.
 
 One aside: third-party Zenless Zone Zero bundles usually also carry two NVIDIA runtime DLLs (`nvngx_dlss.dll` and `nvngx_dlssg.dll`, version 310.9.1). The manager only handles the proxy and the INI and never touches those two. If frame generation does not appear with the proxy and INI alone, copy them into the game folder by hand as well, keeping a backup of the game's own copies first.
 
