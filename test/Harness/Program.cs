@@ -654,6 +654,62 @@ public static class Program
             Gpu.AdviceForAdapter("NVIDIA GeForce RTX 2060", "1.2.3").Contains("SM75"));
         Check("无驱动版本时措辞得体",
             Gpu.AdviceForAdapter("NVIDIA GeForce RTX 3080", "").Contains("未知"));
+
+        // Display-name editing: the validation and the INF-string resolution are pure and always
+        // testable; the registry reads are machine-dependent, so they only run where an NVIDIA
+        // adapter is present.
+        Check("名称校验：空", Gpu.InvalidDisplayNameReason("") is not null);
+        Check("名称校验：纯空白", Gpu.InvalidDisplayNameReason("   ") is not null);
+        Check("名称校验：合法", Gpu.InvalidDisplayNameReason("NVIDIA GeForce RTX 4090") is null);
+        Check("名称校验：超长", Gpu.InvalidDisplayNameReason(new string('x', 128)) is not null);
+        Check("名称校验：控制字符", Gpu.InvalidDisplayNameReason("RTX\n4090") is not null);
+        Check("名称校验：首尾空白", Gpu.InvalidDisplayNameReason(" RTX 4090") is not null);
+
+        // The PnP DeviceDesc is an indirect string into the driver INF; the INF is signed with the
+        // driver package, so its [Strings] table still holds the true model name even when the
+        // display name was renamed. Resolution must prefer that over the spoofable fallback text.
+        var infDir = Path.Combine(Path.GetTempPath(), "dlssg_inf_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(infDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(infDir, "oem24.inf"),
+                "[Strings]\r\nNVIDIA_DEV.2208 = \"NVIDIA GeForce RTX 3080 Ti\"\r\n");
+
+            Check("间接字符串解析到 INF 真名",
+                Gpu.ResolveIndirectString("@oem24.inf,%nvidia_dev.2208%;NVIDIA GeForce RTX 4090", infDir)
+                    == "NVIDIA GeForce RTX 3080 Ti");
+            Check("INF 缺失时退回备用名",
+                Gpu.ResolveIndirectString("@missing.inf,%x%;NVIDIA GeForce RTX 4090", infDir)
+                    == "NVIDIA GeForce RTX 4090");
+            Check("普通字符串原样返回",
+                Gpu.ResolveIndirectString("NVIDIA GeForce RTX 4090") == "NVIDIA GeForce RTX 4090");
+            Check("Strings 段外同名 token 不误匹配",
+                Gpu.ResolveInfToken(new[]
+                {
+                    "[NVIDIA_Devices.NTamd64]",
+                    "%NVIDIA_DEV.2208% = Section040, PCI\\VEN_10DE&DEV_2208",
+                    "[Strings]",
+                    "NVIDIA_DEV.2209 = \"NVIDIA GeForce RTX 4090\"",
+                }, "NVIDIA_DEV.2208") is null);
+        }
+        finally
+        {
+            try { Directory.Delete(infDir, recursive: true); } catch { /* best effort */ }
+        }
+
+        if (hasNvidia)
+        {
+            var adapter = Gpu.NvidiaAdapter();
+            Check("定位到 NVIDIA 适配器", adapter is not null);
+            if (adapter is not null)
+            {
+                var reg = Gpu.RegistryDisplayName(adapter.DeviceId, adapter.Name);
+                var pnp = Gpu.PnpDeviceDescription(adapter.DeviceInstancePath);
+                Console.WriteLine($"      注册表显示名: {reg ?? "(无)"}   PnP 真实名: {pnp ?? "(无)"}");
+                Check("注册表显示名可读", reg is not null);
+                Check("PnP 真实名可读", pnp is not null);
+            }
+        }
     }
 
     private static void TestDeployRestore(string modRoot, string work)

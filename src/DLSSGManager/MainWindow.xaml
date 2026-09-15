@@ -259,6 +259,8 @@
                         <TextBlock x:Name="GpuText" VerticalAlignment="Center" FontSize="12" />
                         <TextBlock x:Name="RouterHintText" Foreground="{DynamicResource TextMuted}"
                                    FontSize="11.5" Margin="10,0,0,0" VerticalAlignment="Center" />
+                        <Button Content="{loc:Tr Toolbar.GpuName}" Style="{StaticResource ToolButton}"
+                                Padding="9,4" FontSize="12" Margin="10,0,0,0" Click="GpuName_Click" />
                     </StackPanel>
                 </StackPanel>
 

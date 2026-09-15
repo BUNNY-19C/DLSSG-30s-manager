@@ -317,6 +317,59 @@ public partial class MainWindow : Window
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
+    /// <summary>
+    /// Views and edits the GPU display name.
+    ///
+    /// Some games gate features such as frame generation on the reported model, which is the reason the
+    /// edit exists. Only the registry display name is written — the hardware id, the driver and its
+    /// capabilities are untouched — and "restore" puts back the name bound to the physical device, which
+    /// is what undoes a spoof even when the spoofing tool is gone.
+    /// </summary>
+    private void GpuName_Click(object sender, RoutedEventArgs e)
+    {
+        var adapter = Gpu.NvidiaAdapter();
+        if (adapter is null)
+        {
+            _log.Write(Loc.T("GpuName.NoGpu"));
+            return;
+        }
+
+        var registryName = Gpu.RegistryDisplayName(adapter.DeviceId, adapter.Name);
+        var realName = Gpu.PnpDeviceDescription(adapter.DeviceInstancePath);
+
+        var dialog = new GpuNameDialog(adapter.Name, registryName, realName) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+
+        var target = dialog.Restore ? realName : dialog.NewName;
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            _log.Write("✗ " + Loc.T("GpuName.NoRealName"));
+            return;
+        }
+
+        var error = dialog.Restore ? null : Gpu.InvalidDisplayNameReason(target);
+        if (error is not null)
+        {
+            _log.Write("✗ " + error);
+            return;
+        }
+
+        var message = Gpu.WriteRegistryDisplayName(adapter.DeviceId, adapter.Name, target);
+        if (message is not null)
+        {
+            _log.Write("✗ " + message + "  " + Loc.T("GpuName.AdminHint"));
+            MessageBox.Show(this, message + "\n\n" + Loc.T("GpuName.AdminHint"),
+                Loc.T("GpuName.Title"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _log.Write(dialog.Restore ? Loc.T("GpuName.Restored", target) : Loc.T("GpuName.Changed", target));
+
+        // The running process may still report the old name until it restarts; re-probe anyway so the
+        // toolbar refreshes whenever Windows decides to answer with the new value.
+        ProbeGpuInBackground();
+    }
+
     private void ProbeGpuInBackground()
     {
         var ui = TaskScheduler.FromCurrentSynchronizationContext();

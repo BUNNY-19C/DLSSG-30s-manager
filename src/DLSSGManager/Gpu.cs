@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -50,6 +51,29 @@ public static class Gpu
 
     private const string DisplayClassKey =
         @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+
+    /// <summary>The NVIDIA adapter in use, if any — same preference <see cref="Probe"/> applies.</summary>
+    public static DisplayAdapter? NvidiaAdapter()
+    {
+        var adapters = Adapters();
+
+        // Prefer the vendor id: a renamed adapter would not necessarily keep "NVIDIA" in its name.
+        return adapters.FirstOrDefault(a => a.Name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
+               ?? adapters.FirstOrDefault(a => IsNvidiaDevice(a.DeviceInstancePath));
+    }
+
+    /// <summary>
+    /// Sanity rules for a display name about to be written into the registry. Returns null when the
+    /// name is usable, otherwise a reason in the active language.
+    /// </summary>
+    public static string? InvalidDisplayNameReason(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Loc.T("GpuName.Empty");
+        if (name!.Length > 127) return Loc.T("GpuName.TooLong");
+        if (name.Any(char.IsControl)) return Loc.T("GpuName.ControlChar");
+        if (name != name.Trim()) return Loc.T("GpuName.Trim");
+        return null;
+    }
 
     /// <summary>Adapters currently attached to the desktop, with their hardware ids.</summary>
     public static List<DisplayAdapter> Adapters()
@@ -152,6 +176,199 @@ public static class Gpu
     public static string RouteForAdapter(string adapterName) => RouteForFamily(FamilyFromName(adapterName));
 
     /// <summary>
+    /// The display-class subkey describing the adapter, matched by hardware id first and by the current
+    /// description second — the same policy as <see cref="DriverVersion"/>, so a renamed card is still
+    /// found.
+    /// </summary>
+    private static string? DisplayClassSubKey(string? deviceId, string? currentName)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(DisplayClassKey);
+            if (key is null) return null;
+
+            var subs = key.GetSubKeyNames()
+                .Where(s => s.Length == 4 && s.All(char.IsDigit))
+                .ToList();
+
+            if (!string.IsNullOrWhiteSpace(deviceId))
+            {
+                foreach (var sub in subs)
+                {
+                    using var dev = key.OpenSubKey(sub);
+                    var match = dev?.GetValue("MatchingDeviceId") as string ?? "";
+                    if (match.Contains($"DEV_{deviceId}", StringComparison.OrdinalIgnoreCase)) return sub;
+                }
+            }
+
+            foreach (var sub in subs)
+            {
+                using var dev = key.OpenSubKey(sub);
+                var desc = dev?.GetValue("DriverDesc") as string ?? "";
+                if (desc.Length > 0 && currentName is not null &&
+                    desc.Contains(currentName, StringComparison.OrdinalIgnoreCase))
+                    return sub;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("定位显卡注册表项失败: " + ex.Message);
+        }
+
+        return null;
+    }
+
+    /// <summary>The display name Windows and games currently read (the DriverDesc value).</summary>
+    public static string? RegistryDisplayName(string? deviceId, string? currentName)
+    {
+        var sub = DisplayClassSubKey(deviceId, currentName);
+        if (sub is null) return null;
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(Path.Combine(DisplayClassKey, sub));
+            return ResolveIndirectString(key?.GetValue("DriverDesc") as string);
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("读取显卡显示名称失败: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The adapter's own PnP description, bound to the physical device rather than to what Windows
+    /// shows.
+    ///
+    /// <see cref="DisplayAdapter.DeviceInstancePath"/> stops at the hardware id, while the values
+    /// live in the per-instance subkey under it, so the container is searched for the first instance
+    /// that carries a description. The stored <c>DeviceDesc</c> is usually an indirect string
+    /// pointing at the driver INF; resolving it through the INF's <c>[Strings]</c> table yields the
+    /// card's true model name, which is what "restore" writes back.
+    /// </summary>
+    public static string? PnpDeviceDescription(string? deviceInstancePath)
+    {
+        if (string.IsNullOrWhiteSpace(deviceInstancePath)) return null;
+
+        try
+        {
+            using var container = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\" + deviceInstancePath);
+            if (container is null) return null;
+
+            var desc = container.GetValue("DeviceDesc") as string;
+            if (string.IsNullOrWhiteSpace(desc))
+            {
+                foreach (var instanceName in container.GetSubKeyNames())
+                {
+                    using var instance = container.OpenSubKey(instanceName);
+                    var candidate = instance?.GetValue("DeviceDesc") as string;
+                    if (!string.IsNullOrWhiteSpace(candidate)) { desc = candidate; break; }
+                }
+            }
+
+            return ResolveIndirectString(desc);
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("读取显卡真实名称失败: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Resolves an INF indirect string of the form <c>@oem24.inf,%nvidia_dev.2208%;NVIDIA GeForce
+    /// RTX 4090</c>. The token resolves through the referenced INF's <c>[Strings]</c> table, which is
+    /// signed with the driver package and therefore not something a rename tool can rewrite — so it
+    /// carries the card's true model name. The text after the last semicolon is only a fallback for
+    /// when the INF cannot be found, and is the part a spoofing tool can replace; it is returned only
+    /// as a last resort. A value without the <c>@</c> prefix is returned unchanged.
+    /// </summary>
+    public static string? ResolveIndirectString(string? value, string? infDir = null)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !value!.StartsWith('@')) return value;
+
+        var semicolon = value.IndexOf(';');
+        if (semicolon < 0) return value;
+
+        var head = value[1..semicolon];
+        var fallback = value[(semicolon + 1)..];
+
+        var comma = head.IndexOf(',');
+        if (comma <= 0) return fallback;
+
+        var infName = head[..comma];
+        var token = head[(comma + 1)..].Trim('%');
+
+        try
+        {
+            var infPath = Path.Combine(infDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"), infName);
+            if (!File.Exists(infPath)) return fallback;
+
+            var resolved = ResolveInfToken(File.ReadLines(infPath), token);
+            return resolved ?? fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    /// <summary>
+    /// Looks up a token in an INF's <c>[Strings]</c> section, e.g. <c>NVIDIA_DEV.2208 = "NVIDIA
+    /// GeForce RTX 3080 Ti"</c>. Only the Strings section is searched — the same token also appears
+    /// as <c>%KEY%</c> on section-mapping lines, which must not match. Tokens are case-insensitive.
+    /// </summary>
+    public static string? ResolveInfToken(IEnumerable<string> infLines, string token)
+    {
+        var inStrings = false;
+
+        foreach (var rawLine in infLines)
+        {
+            var line = rawLine.Trim();
+            if (line.StartsWith('['))
+            {
+                inStrings = line.Equals("[Strings]", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+            if (!inStrings) continue;
+
+            var equals = line.IndexOf('=');
+            if (equals <= 0) continue;
+
+            var key = line[..equals].Trim().Trim('%');
+            if (!string.Equals(key, token, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var value = line[(equals + 1)..].Trim().Trim('"');
+            return value.Length > 0 ? value : null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Writes a display name into the display-class registry key (DriverDesc) — the value Windows and
+    /// games read. Needs elevation (HKLM). Returns null on success, otherwise a message.
+    /// </summary>
+    public static string? WriteRegistryDisplayName(string? deviceId, string? currentName, string newName)
+    {
+        var sub = DisplayClassSubKey(deviceId, currentName);
+        if (sub is null) return Loc.T("GpuName.NoKey");
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(Path.Combine(DisplayClassKey, sub), writable: true);
+            if (key is null) return Loc.T("GpuName.NoKey");
+
+            key.SetValue("DriverDesc", newName, RegistryValueKind.String);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return Loc.T("GpuName.WriteFailed", ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Driver version for an adapter, read from the display class registry key. Matched on the
     /// hardware id first: the product name in that key can be edited, and on a machine where it has
     /// been, a name match would silently return nothing.
@@ -239,14 +456,11 @@ public static class Gpu
 
     public static GpuInfo Probe()
     {
-        var adapters = Adapters();
-
-        // Prefer the vendor id: a renamed adapter would not necessarily keep "NVIDIA" in its name.
-        var nvidia = adapters.FirstOrDefault(a => a.Name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
-                     ?? adapters.FirstOrDefault(a => IsNvidiaDevice(a.DeviceInstancePath));
+        var nvidia = NvidiaAdapter();
 
         if (nvidia is null)
         {
+            var adapters = Adapters();
             return new GpuInfo(
                 adapters.Count > 0 ? string.Join(" / ", adapters.Select(a => a.Name)) : Loc.T("Gpu.NotFound"),
                 "",
