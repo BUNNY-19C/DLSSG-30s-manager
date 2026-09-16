@@ -454,6 +454,32 @@ public static class Gpu
             info.NameMismatchesHardware,
             info.PciDeviceId);
 
+    /// <summary>
+    /// One-line advice for the toolbar. The full text above explains itself over four or five lines,
+    /// which buried the GPU row; the toolbar carries only the driver version and the single fact that
+    /// matters, and <see cref="MainWindow"/> puts the full text on the tooltip and in the log.
+    /// </summary>
+    public static string CompactAdvice(GpuInfo info) =>
+        BuildCompactAdvice(
+            info.Driver,
+            info.HardwareFamily ?? FamilyFromName(info.Name),
+            info.NameMismatchesHardware);
+
+    private static string BuildCompactAdvice(string driver, string? family, bool mismatch)
+    {
+        var parts = new List<string>
+        {
+            driver.Length > 0 ? Loc.T("Gpu.Driver", driver) : Loc.T("Gpu.DriverUnknown"),
+        };
+
+        if (mismatch)
+            parts.Add(Loc.T("Gpu.MismatchShort"));
+        else if (family is not null)
+            parts.Add(Loc.T("Gpu.RouteShort", RouteForFamily(family)));
+
+        return string.Join(" · ", parts);
+    }
+
     public static GpuInfo Probe()
     {
         var nvidia = NvidiaAdapter();

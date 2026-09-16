@@ -283,6 +283,8 @@ public static partial class Strings
         ["Gpu.AdviceUnknown"] = "Unrecognised model — confirm the route yourself.",
         ["Gpu.Mismatch"] = "⚠ GPU name does not match its hardware ID: the name reads “{0}”, but hardware ID {1} belongs to {2}{3}. The name may have been altered by a tool, which misleads drivers and games. The {2} route {4} was chosen from the hardware ID; restoring the GPU name is recommended.",
         ["Gpu.SeriesAmpere"] = " (RTX 30 series)",
+        ["Gpu.MismatchShort"] = "⚠ name doesn’t match the hardware ID; restore the GPU name",
+        ["Gpu.RouteShort"] = "route {0}",
         ["Gpu.SeriesTuring"] = " (RTX 20 series)",
         ["Gpu.SeriesAda"] = " (RTX 40 series)",
         ["Gpu.SeriesBlackwell"] = " (RTX 50 series)",

@@ -283,6 +283,8 @@ public static partial class Strings
         ["Gpu.AdviceUnknown"] = "未识别的型号，请自行确认路由。",
         ["Gpu.Mismatch"] = "⚠ 显卡名称与硬件 ID 不符：名称显示「{0}」，但硬件 ID {1} 属于 {2} 架构{3}。名称可能被工具修改过，这会误导驱动与游戏的功能判断。已按硬件 ID 判定为 {2}，路由取 {4}；建议恢复显卡名称后重试。",
         ["Gpu.SeriesAmpere"] = "（RTX 30 系）",
+        ["Gpu.MismatchShort"] = "⚠ 名称与硬件 ID 不符，建议还原显卡名称",
+        ["Gpu.RouteShort"] = "路由 {0}",
         ["Gpu.SeriesTuring"] = "（RTX 20 系）",
         ["Gpu.SeriesAda"] = "（RTX 40 系）",
         ["Gpu.SeriesBlackwell"] = "（RTX 50 系）",

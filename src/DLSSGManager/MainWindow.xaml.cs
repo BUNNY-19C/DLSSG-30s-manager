@@ -393,18 +393,16 @@ public partial class MainWindow : Window
     /// Renders the GPU lines. Called both when the probe finishes and after a language change, since
     /// the advice text is built in code and would otherwise stay in the previous language.
     ///
-    /// The model line shows the name only: the advice line opens with the driver version, and
-    /// printing it twice on one toolbar row read like a mistake.
+    /// The row shows a one-line summary; the full advice (the long mismatch explanation, the
+    /// machine-match note) goes on the tooltip, and the startup log already carries it too.
     /// </summary>
     private void ApplyGpuText()
     {
         if (_gpuInfo is null) return;
 
         GpuText.Text = _gpuInfo.Name;
-
-        // Regenerated rather than reused: the advice is assembled in code, so the stored string from
-        // the probe is in whatever language was active at probe time.
-        RouterHintText.Text = Gpu.AdviceFor(_gpuInfo);
+        RouterHintText.Text = Gpu.CompactAdvice(_gpuInfo);
+        RouterHintText.ToolTip = Gpu.AdviceFor(_gpuInfo);
     }
 
     // ---- mod source ---------------------------------------------------------

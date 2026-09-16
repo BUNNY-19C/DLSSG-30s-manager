@@ -656,6 +656,26 @@ public static class Program
         Check("无驱动版本时措辞得体",
             Gpu.AdviceForAdapter("NVIDIA GeForce RTX 3080", "").Contains("未知"));
 
+        // The toolbar shows a one-line summary; the full explanation lives on the tooltip and in the
+        // log. A compact line must stay short even in the mismatch case, where the full text runs
+        // several sentences.
+        var compactOk = Gpu.CompactAdvice(new GpuInfo("NVIDIA GeForce RTX 3080 Ti", "566.14", "SM86", "")
+        {
+            PciDeviceId = "2208",
+            HardwareFamily = "Ampere",
+        });
+        Check("紧凑建议：正常卡显示驱动与路由",
+            compactOk.Contains("驱动") && compactOk.Contains("SM86") && compactOk.Length < 60, compactOk);
+
+        var compactMismatch = Gpu.CompactAdvice(new GpuInfo("NVIDIA GeForce RTX 4090", "566.14", "SM86", "")
+        {
+            PciDeviceId = "2208",
+            HardwareFamily = "Ampere",
+            NameMismatchesHardware = true,
+        });
+        Check("紧凑建议：名称不符时只出短句",
+            compactMismatch.Contains("不符") && !compactMismatch.Contains("误导"), compactMismatch);
+
         // Display-name editing: the validation and the INF-string resolution are pure and always
         // testable; the registry reads are machine-dependent, so they only run where an NVIDIA
         // adapter is present.
