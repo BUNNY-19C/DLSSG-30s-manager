@@ -70,6 +70,7 @@ public static class Program
             TestProxyOccupation(modRoot, work);
             TestProxyImport(modRoot, work);
             TestSingleProxyInvariant(modRoot, work);
+            TestCustomNamedProxy(modRoot, work);
             TestAdopt(modRoot, work);
             TestDetection(modRoot, work);
             TestModSourceLocator(modRoot, work);
@@ -1010,6 +1011,90 @@ public static class Program
         Check("恢复后 INI 不是本项目生成的那份", !iniIsOurs, "仍是本项目的配置");
 
         foreach (var line in restore.Lines) Console.WriteLine("        · " + line);
+    }
+
+    /// <summary>
+    /// A proxy the user imported keeps its own file name, which is not in any published list. Its
+    /// whole lifecycle — deploy, status, entry switch, restore — runs on the deployment record's
+    /// hashes alone; before the record was scanned, restore silently left such a file in place.
+    /// </summary>
+    private static void TestCustomNamedProxy(string modRoot, string work)
+    {
+        Section("自定义命名代理（导入 DLL 全周期）");
+        if (SkipWithoutModFiles("自定义命名代理")) return;
+
+        var customName = "testfg_community.dll";
+        var importedPath = Path.Combine(modRoot, ModSource.AltDirName, customName);
+
+        try
+        {
+            var dir = MakeGameDir(work, "GameCustom");
+
+            // A community build without this project's signature: only a recorded hash can vouch for it.
+            var fakeDll = Path.Combine(work, "downloaded", customName);
+            Directory.CreateDirectory(Path.GetDirectoryName(fakeDll)!);
+            File.WriteAllBytes(fakeDll, RandomNumberGenerator.GetBytes(3072));
+            Check("导入文件不带项目签名", !DeploymentService.IsProjectSigned(fakeDll));
+
+            var import = ModSource.ImportProxy(modRoot, fakeDll);
+            Check("导入自定义命名 DLL", import.Ok, import.Message);
+
+            // Built after the import: a ModSource snapshots the folder at construction.
+            var source = new ModSource(modRoot);
+            Check("导入后出现在可用入口", source.AvailableProxies.Contains(customName, StringComparer.OrdinalIgnoreCase));
+
+            var game = new GameEntry
+            {
+                Name = "GameCustom",
+                RenderDir = dir,
+                PreferredProxy = customName,
+                Profile = new GameProfile(),
+            };
+
+            var deploy = DeploymentService.Deploy(game, source);
+            Check("按自定义入口部署成功", deploy.Ok, deploy.Message);
+            var proxyPath = Path.Combine(dir, customName);
+            Check("自定义入口已写入游戏目录", File.Exists(proxyPath));
+            Check("记录含该文件的哈希",
+                game.Deployment?.Files.Any(f => string.Equals(f.FileName, customName, StringComparison.OrdinalIgnoreCase)) == true);
+
+            DeploymentService.Check(game);
+            Check("状态为已部署", game.Status == GameStatus.Deployed, game.StatusText + " / " + game.StatusDetail);
+
+            // Restore must remove the custom entry too — this was the gap.
+            var restore = DeploymentService.Restore(game, removeLogs: false);
+            Check("恢复成功", restore.Ok, restore.Message);
+            Check("自定义入口被删除", !File.Exists(proxyPath));
+            Check("INI 被删除", !File.Exists(Path.Combine(dir, ModSource.IniName)));
+            DeploymentService.Check(game);
+            Check("恢复后状态为未部署", game.Status == GameStatus.NotDeployed, game.StatusText + " / " + game.StatusDetail);
+
+            // Switching entry names must displace the custom one instead of running two proxies.
+            var game2 = new GameEntry
+            {
+                Name = "GameCustom",
+                RenderDir = dir,
+                PreferredProxy = customName,
+                Profile = new GameProfile(),
+            };
+            var deploy2 = DeploymentService.Deploy(game2, source);
+            Check("二次部署成功", deploy2.Ok, deploy2.Message);
+
+            game2.PreferredProxy = "version.dll";
+            var switched = DeploymentService.Deploy(game2, source);
+            Check("换名部署成功", switched.Ok, switched.Message);
+            Check("旧自定义入口被清理", !File.Exists(proxyPath));
+            Check("新入口已写入", File.Exists(Path.Combine(dir, "version.dll")));
+
+            DeploymentService.Restore(game2, removeLogs: false);
+            Check("收尾恢复干净", !File.Exists(Path.Combine(dir, "version.dll")));
+        }
+        finally
+        {
+            // The import lands in the real mod folder; leave it out of the repository.
+            try { if (File.Exists(importedPath)) File.Delete(importedPath); }
+            catch { /* best effort */ }
+        }
     }
 
     private static void TestAdopt(string modRoot, string work)

@@ -142,8 +142,6 @@ public sealed class DeploymentInfo
     /// those deployments used the published entries, which the signature check still covers.
     /// </summary>
     public List<DeployedFile> Files { get; set; } = new();
-
-    [JsonIgnore] public string DeployedAtDisplay => DeployedAt;
 }
 
 public sealed class GameEntry : Observable

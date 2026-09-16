@@ -115,6 +115,7 @@ public static partial class Strings
         ["Detail.DetectNoMarker"] = "未找到 nvngx_dlssg.dll。该游戏可能不支持 DLSS 帧生成。",
         ["Detail.DetectSearching"] = "— 在 {0} 中查找渲染目录",
         ["Detail.SettingSummary"] = "  路由 {0} / {1} / 最大 {2}X / 近似采样 {3} / 日志 {4}",
+        ["Detail.SettingSummaryModern"] = "  帧生成 {0} / 优化内核 {1} / 预设 {2} / 最大 {3}X / 日志 {4}",
         ["Detail.BackupCount"] = "已备份 {0} 个原文件",
         ["Detail.EntriesTaken"] = "可用入口名在游戏目录里都已被占用（version / winmm / dinput8 / winhttp / dxgi，以及你添加的本地入口）。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
 

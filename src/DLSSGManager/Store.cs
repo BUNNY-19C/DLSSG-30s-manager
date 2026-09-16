@@ -236,7 +236,4 @@ public static class IniTemplate
         "[Logging]",
         $"Level={Math.Clamp(p.LogLevel, 0, 3)}",
     });
-
-    /// <summary>Rewrites the keys but leaves a stray user section header comment count alone.</summary>
-    public static string StripDiagnostics(string text) => text;
 }

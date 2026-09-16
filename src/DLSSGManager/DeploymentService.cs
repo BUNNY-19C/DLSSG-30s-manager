@@ -278,17 +278,48 @@ public static class DeploymentService
     }
 
     /// <summary>
+    /// Every entry-name slot a proxy of ours could occupy: the known names, plus any file a
+    /// deployment record claims. A proxy the user imported keeps its own file name — that name is
+    /// the entry name the game resolves — so it appears in no fixed list and only the record vouches
+    /// for it. The INI is excluded: it is a record of ours too, but it is not a proxy, and counting
+    /// it would report a false "multiple proxies" fault.
+    /// </summary>
+    private static IEnumerable<string> OwnedEntryNames(DeploymentInfo? prev)
+    {
+        var names = new List<string>(ModSource.KnownProxyNames);
+        if (prev is not null)
+            names.AddRange(prev.Files.Select(f => f.FileName));
+
+        return names.Where(n => !string.Equals(n, ModSource.IniName, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The hash the deployment record claims for an entry name, or null when it claims none.</summary>
+    private static string? RecordedHashFor(DeploymentInfo? prev, string name)
+    {
+        if (prev is null) return null;
+
+        var file = prev.Files.FirstOrDefault(f =>
+            string.Equals(f.FileName, name, StringComparison.OrdinalIgnoreCase));
+        if (file is not null) return file.Sha256;
+
+        return string.Equals(prev.ProxyName, name, StringComparison.OrdinalIgnoreCase)
+            ? prev.ProxySha256
+            : null;
+    }
+
+    /// <summary>
     /// First entry name in the game directory that already holds something of ours: a DLL carrying this
     /// project's signature, a published extra (the community d3d12.dll, by hash), or a file the given
     /// record claims whose bytes still match.
     ///
-    /// Scanning covers <see cref="ModSource.KnownProxyNames"/> rather than only the published five, so an
-    /// entry the user added — including one copied into the game folder by hand — is recognised on the
-    /// next status check instead of the game looking undeployed.
+    /// Scanning covers the record's own entries as well as <see cref="ModSource.KnownProxyNames"/>, so
+    /// a proxy the user imported under its own name is recognised on the next status check instead of
+    /// the game looking undeployed.
     /// </summary>
     public static string? FindInstalledProxy(string renderDir, DeploymentInfo? prev = null)
     {
-        foreach (var name in ModSource.KnownProxyNames)
+        foreach (var name in OwnedEntryNames(prev))
         {
             var path = Path.Combine(renderDir, name);
             if (File.Exists(path) && IsOurProxyAt(renderDir, name, prev)) return name;
@@ -414,7 +445,7 @@ public static class DeploymentService
         //
         // "Ours" includes a file the record claims by hash: an entry the user added themselves carries
         // no signature this project can vouch for, so the record is the only way to recognise it.
-        var redundantProxies = ModSource.KnownProxyNames
+        var redundantProxies = OwnedEntryNames(prev)
             .Where(n => !string.Equals(n, proxy, StringComparison.OrdinalIgnoreCase))
             .Select(n => (Name: n, Path: Path.Combine(game.RenderDir, n)))
             .Where(x => File.Exists(x.Path) && IsOurProxyAt(game.RenderDir, x.Name, prev))
@@ -472,12 +503,29 @@ public static class DeploymentService
             };
 
             r.Note(Loc.T("Deploy.Done", proxy, ModSource.IniName, game.RenderDir));
-            r.Note(Loc.T("Detail.SettingSummary",
-                game.Profile.Router,
-                game.Profile.KernelImage,
-                game.Profile.MaxGeneratedFrames + 1,
-                Loc.T(game.Profile.HardwareBilinear ? "Deploy.On" : "Deploy.Off"),
-                game.Profile.LogLevel));
+
+            // The summary names the keys actually written, which the INI schema decides: a 0.3.0
+            // payload never reads Router or KernelImage, so logging them would report settings that
+            // exist only in the interface's legacy panel.
+            if (source.IsLegacySchema)
+            {
+                r.Note(Loc.T("Detail.SettingSummary",
+                    game.Profile.Router,
+                    game.Profile.KernelImage,
+                    game.Profile.MaxGeneratedFrames + 1,
+                    Loc.T(game.Profile.HardwareBilinear ? "Deploy.On" : "Deploy.Off"),
+                    game.Profile.LogLevel));
+            }
+            else
+            {
+                r.Note(Loc.T("Detail.SettingSummaryModern",
+                    Loc.T(game.Profile.Enabled ? "Deploy.On" : "Deploy.Off"),
+                    Loc.T(game.Profile.Optimized ? "Deploy.On" : "Deploy.Off"),
+                    game.Profile.Preset,
+                    game.Profile.MaxGeneratedFrames + 1,
+                    game.Profile.LogLevel));
+            }
+
             if (backups.Count > 0)
             {
                 r.Note(Loc.T("Deploy.BackedUp", backups.Count, restoreFolder));
@@ -538,22 +586,19 @@ public static class DeploymentService
         try
         {
             // 1) The proxy we recorded; if there is no record, any project-signed DLL in a known entry name.
-            // Scan every known entry name rather than only the recorded one: a stray proxy can be
-            // present (a name switch that predates the single-proxy rule, a restored backup, an
-            // earlier record lost from the library), and leaving it behind would keep a proxy live in
-            // a folder the user expects to be clean.
-            foreach (var name in ModSource.KnownProxyNames)
+            // Scan the record's own entries as well as the known names: a proxy imported under its
+            // own name appears in neither list alone. A stray proxy can be present (a name switch
+            // that predates the single-proxy rule, a restored backup, an earlier record lost from
+            // the library), and leaving it behind would keep a proxy live in a folder the user
+            // expects to be clean.
+            foreach (var name in OwnedEntryNames(prev))
             {
                 var path = Path.Combine(game.RenderDir, name);
                 if (!File.Exists(path)) continue;
 
-                // Only the recorded name has a recorded hash; for any other name the file must prove
+                // Only files the record claims are accepted by hash; anything else must prove
                 // itself by carrying the project's signature.
-                var recorded = prev is not null && string.Equals(prev.ProxyName, name, StringComparison.OrdinalIgnoreCase)
-                    ? prev.ProxySha256
-                    : null;
-
-                if (IsOurs(path, recorded))
+                if (IsOurs(path, RecordedHashFor(prev, name)))
                 {
                     File.Delete(path);
                     removed++;
@@ -590,9 +635,9 @@ public static class DeploymentService
 
             // 3) Copies an anti-cheat quarantined by renaming (e.g. version.dll.3787982156). Only
             //    files that are provably ours are removed, so another tool's ".bak" survives.
-            foreach (var name in ModSource.KnownProxyNames)
+            foreach (var name in OwnedEntryNames(prev))
             {
-                foreach (var copy in AntiCheat.FindQuarantinedCopies(game.RenderDir, name, prev?.ProxySha256))
+                foreach (var copy in AntiCheat.FindQuarantinedCopies(game.RenderDir, name, RecordedHashFor(prev, name)))
                 {
                     try
                     {
@@ -737,7 +782,7 @@ public static class DeploymentService
         // More than one proxy of ours is a hard fault: the game loads every entry name it recognises,
         // so two would run two inference pipelines and crash. This is reported ahead of the normal
         // status because it needs fixing before the game is launched, not merely noted.
-        var liveProxies = ModSource.KnownProxyNames
+        var liveProxies = OwnedEntryNames(prev)
             .Where(n => File.Exists(Path.Combine(root, n)) && IsOurProxyAt(root, n, prev))
             .ToList();
 

@@ -115,6 +115,7 @@ public static partial class Strings
         ["Detail.DetectNoMarker"] = "nvngx_dlssg.dll not found. This game may not support DLSS frame generation.",
         ["Detail.DetectSearching"] = "— Looking for the render directory under {0}",
         ["Detail.SettingSummary"] = "  route {0} / {1} / up to {2}X / approximate sampling {3} / log {4}",
+        ["Detail.SettingSummaryModern"] = "  frame gen {0} / optimized kernels {1} / preset {2} / up to {3}X / log {4}",
         ["Detail.BackupCount"] = "{0} original file(s) backed up",
         ["Detail.EntriesTaken"] = "Every available entry name is already taken in this game folder (version / winmm / dinput8 / winhttp / dxgi, plus any local entries you added). Pick one manually in the game's settings, or remove the mod occupying it.",
 

@@ -30,6 +30,10 @@ public partial class GpuNameDialog : Window
         CurrentText.Text = shown;
         RealText.Text = string.IsNullOrWhiteSpace(realName) ? Loc.T("GpuName.NoRealName") : realName;
 
+        // Without the real name there is nothing to restore to; leaving the button enabled would
+        // only move the failure to the caller's log, after the dialog has already closed.
+        RestoreButton.IsEnabled = !string.IsNullOrWhiteSpace(realName);
+
         // Start from the name currently reported, so a custom value survives an accidental close.
         NameBox.Text = shown;
 
