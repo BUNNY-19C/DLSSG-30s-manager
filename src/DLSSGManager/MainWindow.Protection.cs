@@ -77,7 +77,7 @@ public partial class MainWindow
         var lines = string.Join("\n", blocked.Select(g => $"· {g.Name} — {g.Protection!.Products}"));
         var body = Loc.T("Anti.BatchBody", blocked.Count, lines);
 
-        _log.Write(Loc.T("Anti.BatchLog", blocked.Count, string.Join("、", blocked.Select(g => g.Name))));
+        _log.Write(Loc.T("Anti.BatchLog", blocked.Count, Loc.Join(blocked.Select(g => g.Name))));
 
         MessageBox.Show(this, body, Loc.T("Anti.BatchTitle"),
             MessageBoxButton.OK, MessageBoxImage.Warning);

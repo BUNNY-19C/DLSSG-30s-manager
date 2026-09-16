@@ -176,6 +176,8 @@ public static partial class Strings
         ["Restore.NoRecordTitle"] = "Confirm restore",
         ["Restore.RemoveLogsOption"] = "Also delete the dlssg_sm86\\logs folder",
 
+        ["Adopt.Starting"] = "— Adopting {0}",
+        ["Adopt.Failed"] = "Adopt failed: {0}",
         ["Adopt.Confirm"] = "Adopting registers an existing proxy DLL as installed by this manager: one of this project's five entries, or the `d3d12.dll` published as an extra (recognised by its pinned hash).\n\nUse it when you copied the mod in by hand. The record has no original backup, so a later restore can only delete these files by their recorded SHA256.\n\nContinue?",
         ["Adopt.ConfirmTitle"] = "Adopt manual install",
         ["Adopt.Done"] = "Adopted {0}",
@@ -199,6 +201,7 @@ public static partial class Strings
         ["Batch.NothingToDeploy"] = "No game to deploy to.",
         ["Batch.NothingToRestore"] = "No deployed game.",
         ["Batch.LastDeploy"] = "Last batch deploy: {0} of {1} succeeded",
+        ["Batch.Progress"] = "{0} / {1} done",
         ["Batch.LastRestore"] = "Last batch restore: {0} of {1} succeeded",
         ["Batch.Item"] = "  {0} {1}: {2}",
 

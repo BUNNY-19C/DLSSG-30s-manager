@@ -24,58 +24,84 @@ public partial class MainWindow
         RunDeploy(game);
     }
 
+    /// <summary>
+    /// Deployment runs off the UI thread: it enumerates every process, hashes a ~15 MB DLL, verifies
+    /// its signature and scans the game folder — the same work that froze the window once status
+    /// refresh ran inline. The anti-cheat confirmation has to precede any file write, so the scan
+    /// runs first (also off-thread) and the dialog appears from the continuation.
+    /// </summary>
     private void RunDeploy(GameEntry game)
     {
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
-        var allowProtected = false;
-        var protection = AntiCheat.Scan(game.RenderDir);
-        game.Protection = protection;
-
-        if (protection.HasKernelAntiCheat)
-        {
-            var body = Loc.T("Anti.OverrideBody", game.Name, protection.Products, protection.Evidence);
-
-            var answer = MessageBox.Show(body, Loc.T("Anti.OverrideTitle"), MessageBoxButton.YesNo,
-                MessageBoxImage.Warning, MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes)
-            {
-                _log.Write(Loc.T("Anti.CancelLog", game.Name, protection.Summary, protection.Evidence));
-                return;
-            }
-
-            allowProtected = true;
-            _log.Write(Loc.T("Anti.OverrideLog", game.Name, protection.Summary));
-        }
-
         _busy = true;
-        try
-        {
-            _log.Write(Loc.T("Deploy.Starting", game.Name));
-            _log.Write("  " + game.RenderDir);
+        BatchStatusText.Text = Loc.T("Deploy.Starting", game.Name);
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
 
-            var result = DeploymentService.Deploy(game, CurrentSource(), allowProtected);
-            _log.Details(result.Lines);
-            _log.Result(result.Ok, result.Message);
-        }
-        finally
-        {
-            _busy = false;
-        }
+        Task.Run(() => AntiCheat.Scan(game.RenderDir))
+            .ContinueWith(t =>
+            {
+                var protection = t.Result;
+                game.Protection = protection;
 
-        LibraryStore.Save(_data);
-        FinishGameAction(game);
+                if (protection.HasKernelAntiCheat)
+                {
+                    var body = Loc.T("Anti.OverrideBody", game.Name, protection.Products, protection.Evidence);
+
+                    var answer = MessageBox.Show(body, Loc.T("Anti.OverrideTitle"), MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning, MessageBoxResult.No);
+                    if (answer != MessageBoxResult.Yes)
+                    {
+                        _busy = false;
+                        BatchStatusText.Text = "";
+                        _log.Write(Loc.T("Anti.CancelLog", game.Name, protection.Summary, protection.Evidence));
+                        return;
+                    }
+
+                    _log.Write(Loc.T("Anti.OverrideLog", game.Name, protection.Summary));
+                }
+
+                DeployInBackground(game, allowProtected: protection.HasKernelAntiCheat, ui);
+            }, ui);
+    }
+
+    /// <summary>Runs the deployment and repaints the game afterwards. Call on the UI thread.</summary>
+    private void DeployInBackground(GameEntry game, bool allowProtected, TaskScheduler ui)
+    {
+        var source = CurrentSource();
+
+        Task.Run(() => DeploymentService.Deploy(game, source, allowProtected))
+            .ContinueWith(t =>
+            {
+                _busy = false;
+                BatchStatusText.Text = "";
+
+                var result = t.Result;
+                _log.Details(result.Lines);
+                _log.Result(result.Ok, result.Message);
+
+                LibraryStore.Save(_data);
+                FinishGameAction(game);
+            }, ui);
     }
 
     /// <summary>
     /// Re-reads the game from disk and repaints its row. Without the re-check the list would keep
-    /// showing the status from before the operation (Loc.T("Status.Missing") after a successful restore, etc.).
+    /// showing the status from before the operation (Loc.T("Status.Missing") after a successful
+    /// restore, etc.). The evaluation hashes and trust-verifies the deployed files, so it runs off
+    /// the UI thread like every other status read.
     /// </summary>
     private void FinishGameAction(GameEntry game)
     {
-        DeploymentService.Check(game);
-        LibraryStore.Save(_data);
-        UpdateStatusCard();
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
+
+        Task.Run(() => DeploymentService.Evaluate(game))
+            .ContinueWith(t =>
+            {
+                DeploymentService.Apply(game, t.Result);
+                LibraryStore.Save(_data);
+                UpdateStatusCard();
+            }, ui);
     }
 
     private void Restore_Click(object sender, RoutedEventArgs e)
@@ -98,19 +124,21 @@ public partial class MainWindow
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         _busy = true;
-        try
-        {
-            _log.Write(Loc.T("Restore.Starting", game.Name));
-            var result = DeploymentService.Restore(game, RemoveLogsCheck.IsChecked == true);
-            _log.Details(result.Lines);
-            _log.Result(result.Ok, result.Message);
-        }
-        finally
-        {
-            _busy = false;
-        }
+        BatchStatusText.Text = Loc.T("Restore.Starting", game.Name);
+        var removeLogs = RemoveLogsCheck.IsChecked == true;
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
 
-        FinishGameAction(game);
+        Task.Run(() => DeploymentService.Restore(game, removeLogs))
+            .ContinueWith(t =>
+            {
+                _busy = false;
+                BatchStatusText.Text = "";
+
+                var result = t.Result;
+                _log.Details(result.Lines);
+                _log.Result(result.Ok, result.Message);
+                FinishGameAction(game);
+            }, ui);
     }
 
     private void Adopt_Click(object sender, RoutedEventArgs e)
@@ -122,19 +150,30 @@ public partial class MainWindow
         if (MessageBox.Show(body, Loc.T("Adopt.ConfirmTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
             return;
 
-        _busy = true;
-        try
-        {
-            var result = DeploymentService.Adopt(game);
-            _log.Details(result.Lines);
-            _log.Result(result.Ok, result.Message);
-        }
-        finally
-        {
-            _busy = false;
-        }
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
-        FinishGameAction(game);
+        _busy = true;
+        BatchStatusText.Text = Loc.T("Adopt.Starting", game.Name);
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
+
+        // Adoption trust-verifies every candidate DLL in the game folder, so it belongs off the UI
+        // thread like deploy. The service does not catch its own exceptions, so the task does.
+        Task.Run(() =>
+        {
+            var r = new OpResult();
+            try { return DeploymentService.Adopt(game); }
+            catch (Exception ex) { r.Fail(Loc.T("Adopt.Failed", ex.Message)); return r; }
+        })
+            .ContinueWith(t =>
+            {
+                _busy = false;
+                BatchStatusText.Text = "";
+
+                var result = t.Result;
+                _log.Details(result.Lines);
+                _log.Result(result.Ok, result.Message);
+                FinishGameAction(game);
+            }, ui);
     }
 
     // ---- batch --------------------------------------------------------------
@@ -165,12 +204,16 @@ public partial class MainWindow
             return;
 
         _log.Write(Loc.T("Batch.DeployStart", targets.Count));
-        var ok = 0;
-        var source = CurrentSource();
 
         _busy = true;
-        try
+        var progress = UiProgress();
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
+
+        Task.Run(() =>
         {
+            var ok = 0;
+            var source = CurrentSource();
+
             foreach (var game in targets)
             {
                 // The confirmation above covers the anti-cheat risk for every game in the list.
@@ -180,17 +223,21 @@ public partial class MainWindow
                 _log.Write($"  {mark}{risk} {game.Name}：{result.Message}");
 
                 if (result.Ok) ok++;
+                progress.Report(Loc.T("Batch.Progress", ok, targets.Count));
             }
-        }
-        finally
-        {
-            _busy = false;
-        }
 
-        _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Deploy"), ok, targets.Count));
-        BatchStatusText.Text = Loc.T("Batch.LastDeploy", ok, targets.Count);
-        LibraryStore.Save(_data);
-        RefreshAllStatus();
+            return ok;
+        })
+            .ContinueWith(t =>
+            {
+                _busy = false;
+
+                var ok = t.Result;
+                _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Deploy"), ok, targets.Count));
+                BatchStatusText.Text = Loc.T("Batch.LastDeploy", ok, targets.Count);
+                LibraryStore.Save(_data);
+                RefreshAllStatus();
+            }, ui);
     }
 
     private void RestoreAll_Click(object sender, RoutedEventArgs e)
@@ -207,29 +254,37 @@ public partial class MainWindow
             return;
 
         _log.Write(Loc.T("Batch.RestoreStart", targets.Count));
-        var ok = 0;
-        var removeLogs = RemoveLogsCheck.IsChecked == true;
 
         _busy = true;
-        try
+        var removeLogs = RemoveLogsCheck.IsChecked == true;
+        var progress = UiProgress();
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
+
+        Task.Run(() =>
         {
+            var ok = 0;
+
             foreach (var game in targets)
             {
                 var result = DeploymentService.Restore(game, removeLogs);
                 var mark = result.Ok ? "✓" : "✗";
                 _log.Write($"  {mark} {game.Name}：{result.Message}");
                 if (result.Ok) ok++;
+                progress.Report(Loc.T("Batch.Progress", ok, targets.Count));
             }
-        }
-        finally
-        {
-            _busy = false;
-        }
 
-        _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Restore"), ok, targets.Count));
-        BatchStatusText.Text = Loc.T("Batch.LastRestore", ok, targets.Count);
-        LibraryStore.Save(_data);
-        RefreshAllStatus();
+            return ok;
+        })
+            .ContinueWith(t =>
+            {
+                _busy = false;
+
+                var ok = t.Result;
+                _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Restore"), ok, targets.Count));
+                BatchStatusText.Text = Loc.T("Batch.LastRestore", ok, targets.Count);
+                LibraryStore.Save(_data);
+                RefreshAllStatus();
+            }, ui);
     }
 
     // ---- scanning -----------------------------------------------------------
@@ -302,6 +357,7 @@ public partial class MainWindow
     private void MergeCandidates(List<GameCandidate> found)
     {
         var added = 0;
+        var touched = new List<GameEntry>();
         var newlyAdded = new List<GameEntry>();
 
         foreach (var candidate in found)
@@ -312,7 +368,7 @@ public partial class MainWindow
             if (existing is not null)
             {
                 if (!string.IsNullOrWhiteSpace(candidate.ExePath)) existing.ExePath = candidate.ExePath;
-                DeploymentService.Check(existing);
+                touched.Add(existing);
                 continue;
             }
 
@@ -326,21 +382,33 @@ public partial class MainWindow
                 Profile = new GameProfile { Router = _data.RecommendedRouter },
             };
 
-            DeploymentService.Check(game);
             _data.Games.Add(game);
+            touched.Add(game);
             newlyAdded.Add(game);
             added++;
         }
 
-        LibraryStore.Save(_data);
         _log.Write(Loc.T("Scan.Done", found.Count, added));
 
         // Land on something useful instead of leaving the detail pane empty after a scan.
         if (GameList.SelectedItem is null && _data.Games.Count > 0)
             GameList.SelectedIndex = 0;
 
-        // One summary prompt for the whole scan rather than a dialog per protected title.
-        WarnAboutProtected(newlyAdded);
+        // Filling in each game's status means hashing and trust-verifying its files — the same
+        // expensive evaluation that status refresh runs off the UI thread. The anti-cheat summary
+        // prompt needs those results, so it moves into the continuation too.
+        var games = touched.ToList();
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
+
+        Task.Run(() => games.Select(g => (Game: g, Check: DeploymentService.Evaluate(g))).ToList())
+            .ContinueWith(t =>
+            {
+                foreach (var (game, check) in t.Result) DeploymentService.Apply(game, check);
+
+                LibraryStore.Save(_data);
+                UpdateStatusCard();
+                WarnAboutProtected(newlyAdded);
+            }, ui);
     }
 
     // ---- path pickers -------------------------------------------------------

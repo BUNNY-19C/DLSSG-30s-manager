@@ -177,6 +177,8 @@ public static partial class Strings
         ["Restore.RemoveLogsOption"] = "恢复时一并删除 dlssg_sm86\\logs 日志目录",
 
         ["Adopt.Confirm"] = "接管会把当前目录里已存在的代理 DLL 登记为「由本管理器安装」：本项目的 5 个入口，或随附加入口分发的 `d3d12.dll`（按固定哈希识别）。\n\n适用于你之前手工复制过 Mod 的情况。接管记录不含原始备份，之后恢复只能按记录里的 SHA256 删除这些文件。\n\n继续吗？",
+        ["Adopt.Starting"] = "— 接管 {0}",
+        ["Adopt.Failed"] = "接管失败：{0}",
         ["Adopt.ConfirmTitle"] = "接管手工安装",
         ["Adopt.Done"] = "已接管 {0}",
         ["Adopt.Note"] = "注意：接管记录里没有原始备份，因为文件是手工放入的。",
@@ -199,6 +201,7 @@ public static partial class Strings
         ["Batch.NothingToDeploy"] = "没有可部署的游戏。",
         ["Batch.NothingToRestore"] = "没有已部署的游戏。",
         ["Batch.LastDeploy"] = "上次批量部署：成功 {0} / {1}",
+        ["Batch.Progress"] = "进行中 {0} / {1}",
         ["Batch.LastRestore"] = "上次批量恢复：成功 {0} / {1}",
         ["Batch.Item"] = "  {0} {1}：{2}",
 
