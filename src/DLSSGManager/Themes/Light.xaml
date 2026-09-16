@@ -4,6 +4,9 @@
 
     状态色与强调色都比深色版更深：同样的绿/橙直接用在白底上对比度不足，
     文字和状态点会发虚。
+
+    日志区在浅色主题下保持深色（终端惯例），所以 TextLogTitle / TextOnLog
+    在这里是浅色值——它们落在 LogBackground 上，语义是"日志区内的文字"。
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -11,56 +14,56 @@
     <!-- 窗口与容器 -->
     <SolidColorBrush x:Key="WindowBackground" Color="#F4F5F7" />
     <SolidColorBrush x:Key="PanelBackground" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="CardBackground" Color="#F0F2F5" />
-    <SolidColorBrush x:Key="LogBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CardBackground" Color="#F8F9FB" />
+    <SolidColorBrush x:Key="LogBackground" Color="#17191D" />
     <SolidColorBrush x:Key="PopupBackground" Color="#FFFFFF" />
 
     <!-- 输入控件 -->
     <SolidColorBrush x:Key="InputBackground" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="InputBorderBrush" Color="#C6CAD2" />
+    <SolidColorBrush x:Key="InputBorderBrush" Color="#D5DAE0" />
 
     <!-- 分隔线与悬停 -->
-    <SolidColorBrush x:Key="LineBrush" Color="#DFE1E6" />
-    <SolidColorBrush x:Key="HoverBackground" Color="#E8EAEE" />
-    <SolidColorBrush x:Key="ListHoverBackground" Color="#EDEFF3" />
-    <SolidColorBrush x:Key="ListSelectedBackground" Color="#D8E5FA" />
+    <SolidColorBrush x:Key="LineBrush" Color="#E6E9ED" />
+    <SolidColorBrush x:Key="HoverBackground" Color="#EEF0F3" />
+    <SolidColorBrush x:Key="ListHoverBackground" Color="#F3F5F7" />
+    <SolidColorBrush x:Key="ListSelectedBackground" Color="#E9F5DC" />
 
     <!-- 文字 -->
-    <SolidColorBrush x:Key="TextPrimary" Color="#1B1F26" />
-    <SolidColorBrush x:Key="TextMuted" Color="#5A616B" />
-    <SolidColorBrush x:Key="TextFaint" Color="#868D98" />
-    <SolidColorBrush x:Key="TextSection" Color="#525A66" />
-    <SolidColorBrush x:Key="TextLogTitle" Color="#3C434D" />
-    <SolidColorBrush x:Key="TextOnLog" Color="#2A3038" />
+    <SolidColorBrush x:Key="TextPrimary" Color="#191C20" />
+    <SolidColorBrush x:Key="TextMuted" Color="#5A626C" />
+    <SolidColorBrush x:Key="TextFaint" Color="#828B95" />
+    <SolidColorBrush x:Key="TextSection" Color="#5D6670" />
+    <SolidColorBrush x:Key="TextLogTitle" Color="#D2D8DE" />
+    <SolidColorBrush x:Key="TextOnLog" Color="#B0B8C0" />
 
-    <!-- 强调色与按钮 -->
-    <SolidColorBrush x:Key="AccentBrush" Color="#1A66D6" />
+    <!-- 强调色与按钮：白底上主色仍用 RTX 绿（黑字按钮），链接/选中等文字场景用深绿 -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#5E9400" />
     <SolidColorBrush x:Key="ButtonBackground" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#C6CAD2" />
-    <SolidColorBrush x:Key="PrimaryBackground" Color="#1A66D6" />
-    <SolidColorBrush x:Key="PrimaryBorderBrush" Color="#1A66D6" />
-    <SolidColorBrush x:Key="PrimaryHoverBackground" Color="#1557B8" />
-    <SolidColorBrush x:Key="OnPrimaryText" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="DangerBackground" Color="#FDF0F0" />
-    <SolidColorBrush x:Key="DangerBorderBrush" Color="#E6B9B9" />
-    <SolidColorBrush x:Key="DangerText" Color="#A81E17" />
+    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#D5DAE0" />
+    <SolidColorBrush x:Key="PrimaryBackground" Color="#76B900" />
+    <SolidColorBrush x:Key="PrimaryBorderBrush" Color="#76B900" />
+    <SolidColorBrush x:Key="PrimaryHoverBackground" Color="#69A800" />
+    <SolidColorBrush x:Key="OnPrimaryText" Color="#0C0F0A" />
+    <SolidColorBrush x:Key="DangerBackground" Color="#FCEDEE" />
+    <SolidColorBrush x:Key="DangerBorderBrush" Color="#F0C5C7" />
+    <SolidColorBrush x:Key="DangerText" Color="#B3353D" />
 
     <!-- 徽章 -->
-    <SolidColorBrush x:Key="BadgeOkBackground" Color="#E1F3E1" />
-    <SolidColorBrush x:Key="BadgeOkText" Color="#26601F" />
-    <SolidColorBrush x:Key="BadgeWarnBackground" Color="#FCEFDB" />
-    <SolidColorBrush x:Key="BadgeWarnText" Color="#8A5606" />
+    <SolidColorBrush x:Key="BadgeOkBackground" Color="#E4F5E6" />
+    <SolidColorBrush x:Key="BadgeOkText" Color="#1F7A38" />
+    <SolidColorBrush x:Key="BadgeWarnBackground" Color="#FBF2D9" />
+    <SolidColorBrush x:Key="BadgeWarnText" Color="#7A5F14" />
 
     <!-- 反作弊警告横幅 -->
-    <SolidColorBrush x:Key="WarnBannerBackground" Color="#FFF6E5" />
-    <SolidColorBrush x:Key="WarnBannerBorder" Color="#EFD3A0" />
-    <SolidColorBrush x:Key="WarnBannerTitle" Color="#7D5000" />
-    <SolidColorBrush x:Key="WarnBannerBody" Color="#66491F" />
+    <SolidColorBrush x:Key="WarnBannerBackground" Color="#FBF2D9" />
+    <SolidColorBrush x:Key="WarnBannerBorder" Color="#E2C87C" />
+    <SolidColorBrush x:Key="WarnBannerTitle" Color="#7A5F14" />
+    <SolidColorBrush x:Key="WarnBannerBody" Color="#6E5B2E" />
 
     <!-- 游戏状态指示 -->
-    <SolidColorBrush x:Key="StatusOkBrush" Color="#2C7A2C" />
-    <SolidColorBrush x:Key="StatusWarnBrush" Color="#9C5800" />
-    <SolidColorBrush x:Key="StatusBadBrush" Color="#BE251D" />
-    <SolidColorBrush x:Key="StatusIdleBrush" Color="#767D88" />
+    <SolidColorBrush x:Key="StatusOkBrush" Color="#2F9E44" />
+    <SolidColorBrush x:Key="StatusWarnBrush" Color="#B08A1E" />
+    <SolidColorBrush x:Key="StatusBadBrush" Color="#C93B43" />
+    <SolidColorBrush x:Key="StatusIdleBrush" Color="#98A1AB" />
 
 </ResourceDictionary>

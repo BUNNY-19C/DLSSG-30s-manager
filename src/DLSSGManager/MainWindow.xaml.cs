@@ -392,14 +392,15 @@ public partial class MainWindow : Window
     /// <summary>
     /// Renders the GPU lines. Called both when the probe finishes and after a language change, since
     /// the advice text is built in code and would otherwise stay in the previous language.
+    ///
+    /// The model line shows the name only: the advice line opens with the driver version, and
+    /// printing it twice on one toolbar row read like a mistake.
     /// </summary>
     private void ApplyGpuText()
     {
         if (_gpuInfo is null) return;
 
-        GpuText.Text = string.IsNullOrWhiteSpace(_gpuInfo.Driver)
-            ? _gpuInfo.Name
-            : Loc.T("Gpu.NameWithDriver", _gpuInfo.Name, _gpuInfo.Driver);
+        GpuText.Text = _gpuInfo.Name;
 
         // Regenerated rather than reused: the advice is assembled in code, so the stored string from
         // the probe is in whatever language was active at probe time.
