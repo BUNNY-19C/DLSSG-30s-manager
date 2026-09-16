@@ -55,6 +55,9 @@ public partial class MainWindow : Window
         AppPaths.EnsureCreated();
         _log = new OutputLog(OutputBox);
 
+        VersionText.Text = AppVersion.Label;
+        Title = Loc.T("App.Name") + "  " + AppVersion.Label;
+
         BuildLocalizedCombos();
         BuildLanguageCombo();
         BuildThemeCombo();
@@ -239,6 +242,10 @@ public partial class MainWindow : Window
     /// </summary>
     private void RefreshCodeText()
     {
+        // The version is language-independent, but the title text is not — and the code-assigned
+        // title has replaced the loc binding from XAML, so re-apply it here.
+        Title = Loc.T("App.Name") + "  " + AppVersion.Label;
+
         AdminButton.Content = Loc.T(Native.IsElevated() ? "Toolbar.AlreadyAdmin" : "Toolbar.RestartAdmin");
 
         // The game rows bind to computed properties on GameEntry, which the language change cannot

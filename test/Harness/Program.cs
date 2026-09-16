@@ -350,6 +350,13 @@ public static class Program
         Section("Mod 文件源识别");
         if (SkipWithoutModFiles("Mod 文件源识别")) return;
 
+        // The version comes from the csproj locally and from the git tag in release builds. The
+        // harness is its own assembly, so this can only verify the format and that the commit-hash
+        // suffix the SDK appends is stripped; the app's real number is pinned in its csproj.
+        Check("版本号格式正确且剥离提交哈希",
+            System.Text.RegularExpressions.Regex.IsMatch(AppVersion.Label, @"^v\d+\.\d+\.\d+$"),
+            AppVersion.Label);
+
         var source = new ModSource(modRoot);
         Check("源目录有效", source.IsValid, source.ValidationMessage);
 
