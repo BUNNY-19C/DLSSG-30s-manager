@@ -35,7 +35,7 @@ public sealed class OpResult
 /// </summary>
 public static class DeploymentService
 {
-    public const string AutoProxy = "自动";
+    public const string AutoProxy = GameEntry.AutoProxy;
 
     public static string Sha256(string path)
     {
@@ -288,7 +288,7 @@ public static class DeploymentService
     {
         var names = new List<string>(ModSource.KnownProxyNames);
         if (prev is not null)
-            names.AddRange(prev.Files.Select(f => f.FileName));
+            names.AddRange(prev.Files.Select(f => Path.GetFileName(f.FileName)));
 
         return names.Where(n => !string.Equals(n, ModSource.IniName, StringComparison.OrdinalIgnoreCase))
                     .Distinct(StringComparer.OrdinalIgnoreCase);
@@ -437,6 +437,8 @@ public static class DeploymentService
         var iniText = IniTemplate.Render(source.IniText, game.Profile);
         var restoreFolder = Path.Combine(AppPaths.RestoreRoot, game.Id, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         var backups = new List<BackupItem>();
+        string? tmp = null;
+        string? iniTmp = null;
 
         // The mod requires exactly one proxy in the game folder: the game loads every entry name it
         // recognises, so two would run two inference pipelines at once. Rather than trusting the
@@ -470,11 +472,11 @@ public static class DeploymentService
                 File.Delete(path);
             }
 
-            var tmp = proxyDest + ".dlssgtmp";
+            tmp = proxyDest + ".dlssgtmp";
             File.Copy(source.DllPath(proxy), tmp, overwrite: true);
             File.Move(tmp, proxyDest, overwrite: true);
 
-            var iniTmp = iniDest + ".dlssgtmp";
+            iniTmp = iniDest + ".dlssgtmp";
             File.WriteAllText(iniTmp, iniText, new UTF8Encoding(false));
             File.Move(iniTmp, iniDest, overwrite: true);
 
@@ -484,6 +486,15 @@ public static class DeploymentService
             var proxyHash = Sha256(proxyDest);
             var iniHash = Sha256(iniDest);
 
+            // Carry the previous record's backups into the new one. Without this, a redeploy (a
+            // settings change, or a batch deploy over an already-deployed game) silently drops the
+            // only references to displaced foreign files — the user's original INI would sit in the
+            // restore folder forever and never come back. New backups win on a name clash.
+            var carried = (prev?.Backups ?? new List<BackupItem>())
+                .Where(b => backups.All(n => !string.Equals(n.FileName, b.FileName, StringComparison.OrdinalIgnoreCase)))
+                .Concat(backups)
+                .ToList();
+
             game.Deployment = new DeploymentInfo
             {
                 ProxyName = proxy,
@@ -491,10 +502,12 @@ public static class DeploymentService
                 DeployedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 ProxySha256 = proxyHash,
                 IniSha256 = iniHash,
-                RestoreFolder = backups.Count > 0 ? restoreFolder : "",
-                Backups = backups,
+                // Restore works from each item's StoredPath, not this string; it names the folder
+                // this deploy wrote into, or the previous one's when nothing new was displaced.
+                RestoreFolder = backups.Count > 0 ? restoreFolder : prev?.RestoreFolder ?? "",
+                Backups = carried,
                 // Both files this deployment wrote. Kept so the entry-name scan can recognise a proxy the
-                // user supplied themselves, which no signature vouches for.
+                // user added themselves, which no signature vouches for.
                 Files = new List<DeployedFile>
                 {
                     new() { FileName = proxy, Sha256 = proxyHash, Size = new FileInfo(proxyDest).Length },
@@ -535,6 +548,14 @@ public static class DeploymentService
         }
         catch (Exception ex)
         {
+            // A failed copy/move (locked file, full disk) must not leave a stray *.dlssgtmp in the
+            // game folder — nothing else ever recognises or cleans those.
+            foreach (var leftover in new[] { tmp, iniTmp })
+            {
+                if (leftover is null) continue;
+                try { File.Delete(leftover); } catch { /* best effort */ }
+            }
+
             r.Fail(Loc.T("Deploy.Failed", ex.Message));
         }
 

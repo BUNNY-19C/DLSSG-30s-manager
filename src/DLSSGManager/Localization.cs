@@ -52,13 +52,19 @@ public sealed class Loc : INotifyPropertyChanged
         return key;
     }
 
-    /// <summary>Formatted lookup, for strings containing placeholders.</summary>
+    /// <summary>
+    /// Formatted lookup, for strings containing placeholders.
+    ///
+    /// Invariant culture on purpose: these strings are now formatted from pool threads during
+    /// background operations, and a per-culture number format would make the same log line render
+    /// differently depending on which thread picked it up.
+    /// </summary>
     public static string T(string key, params object?[] args)
     {
         var template = T(key);
         try
         {
-            return string.Format(CultureInfo.CurrentCulture, template, args);
+            return string.Format(CultureInfo.InvariantCulture, template, args);
         }
         catch (FormatException)
         {

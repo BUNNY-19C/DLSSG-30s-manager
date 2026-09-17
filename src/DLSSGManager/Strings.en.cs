@@ -318,6 +318,7 @@ public static partial class Strings
         ["Fetch.EscapeAttempt"] = "An archive entry points outside the destination folder.",
         ["Fetch.UrlRejected"] = "Address not allowed: {0}",
         ["Fetch.RedirectRejected"] = "Redirect target not allowed: {0}",
+        ["Fetch.HttpFailed"] = "Request failed (HTTP {1}): {0}",
         ["Fetch.RedirectNoTarget"] = "Redirect has no target address.",
         ["Fetch.RedirectTooMany"] = "Too many redirects.",
         ["Fetch.UnknownFilter"] = "Unrecognised source filter “{0}”; using all sources. Valid values: {1}",

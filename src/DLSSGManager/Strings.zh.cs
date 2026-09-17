@@ -318,6 +318,7 @@ public static partial class Strings
         ["Fetch.EscapeAttempt"] = "文件路径指向目标目录之外。",
         ["Fetch.UrlRejected"] = "地址不允许：{0}",
         ["Fetch.RedirectRejected"] = "重定向目标不允许：{0}",
+        ["Fetch.HttpFailed"] = "请求失败（HTTP {1}）：{0}",
         ["Fetch.RedirectNoTarget"] = "重定向缺少目标地址。",
         ["Fetch.RedirectTooMany"] = "重定向次数过多。",
         ["Fetch.UnknownFilter"] = "未识别的下载源筛选 «{0}»，改用全部源。可用值：{1}",

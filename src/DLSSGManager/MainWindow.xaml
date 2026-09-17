@@ -117,7 +117,7 @@
                             <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
                                    Focusable="False" PopupAnimation="Slide"
                                    IsOpen="{TemplateBinding IsDropDownOpen}">
-                                <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource ButtonBorderBrush}" BorderThickness="1"
+                                <Border Background="{DynamicResource PopupBackground}" BorderBrush="{DynamicResource ButtonBorderBrush}" BorderThickness="1"
                                         CornerRadius="8" Margin="0,3,0,0"
                                         MinWidth="{TemplateBinding ActualWidth}"
                                         MaxHeight="{TemplateBinding MaxDropDownHeight}">
@@ -241,7 +241,7 @@
 
         <!--
             滚动条：默认模板是白色宽条带两端箭头，在深色界面上非常突兀。
-            这里换成 8px 细条、圆角拇指、无箭头；颜色走主题键，浅色主题同样成立。
+            这里换成 10px 细条、圆角拇指、无箭头；颜色走主题键，浅色主题同样成立。
             隐式样式覆盖主窗口内全部滚动条（详情区、游戏列表、日志、下拉弹层）。
         -->
         <Style x:Key="ScrollPageButton" TargetType="RepeatButton">
@@ -389,7 +389,7 @@
                                        Foreground="{DynamicResource BadgeOkText}" />
                         </Border>
                     </StackPanel>
-                    <!-- 显卡型号与入口按钮一行，长建议文本换行放下一行：避免建议把按钮挤出视野 -->
+                    <!-- 显卡型号与入口按钮固定一行；第二行只显示紧凑摘要，完整建议在悬停提示与启动日志里 -->
                     <StackPanel Margin="0,7,0,0">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{loc:Tr Toolbar.Gpu}" Style="{StaticResource FieldLabel}" />

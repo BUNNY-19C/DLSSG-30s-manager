@@ -397,7 +397,15 @@ public static class ModFetcher
                 continue;
             }
 
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                // Dispose before throwing: EnsureSuccessStatusCode would leak the response, and the
+                // status code in the message tells the retry log which endpoint answered how.
+                var code = (int)response.StatusCode;
+                response.Dispose();
+                throw new InvalidOperationException(Loc.T("Fetch.HttpFailed", current, code));
+            }
+
             return response;
         }
 

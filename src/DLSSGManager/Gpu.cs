@@ -98,8 +98,6 @@ public static class Gpu
         return result;
     }
 
-    public static List<string> AdapterNames() => Adapters().Select(a => a.Name).ToList();
-
     /// <summary>
     /// Extracts the device id from a device instance path such as
     /// <c>PCI\VEN_10DE&amp;DEV_2208&amp;SUBSYS_...</c>. Null when the path carries no id.
@@ -173,6 +171,10 @@ public static class Gpu
     public static string RouteForFamily(string? family) =>
         string.Equals(family, "Turing", StringComparison.Ordinal) ? "SM75" : "SM86";
 
+    /// <summary>
+    /// Route decided from the product name alone. The name can be edited in the registry, so this
+    /// is a fallback and test path only — <see cref="Classify"/> is what the probe uses.
+    /// </summary>
     public static string RouteForAdapter(string adapterName) => RouteForFamily(FamilyFromName(adapterName));
 
     /// <summary>

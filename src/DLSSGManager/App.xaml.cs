@@ -32,6 +32,14 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             AppPaths.Log("未处理异常: " + args.ExceptionObject);
 
+        // A fault in a background task that nobody awaits would vanish without a trace — log it,
+        // and mark it observed so it cannot escalate into a process crash at finalisation.
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            AppPaths.Log("未观察任务异常: " + args.Exception);
+            args.SetObserved();
+        };
+
         base.OnStartup(e);
     }
 

@@ -34,10 +34,28 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(friendly)) game.Name = friendly;
         }
 
-        DeploymentService.Check(game);
+        _ = EvaluateAttachedFolderAsync(game);
+    }
+
+    /// <summary>
+    /// The status evaluation hashes and trust-verifies the game folder's files, so it runs off the
+    /// UI thread; the anti-cheat prompt reads the protection the evaluation carries and therefore
+    /// waits for it.
+    /// </summary>
+    private async Task EvaluateAttachedFolderAsync(GameEntry game)
+    {
+        try
+        {
+            var check = await Task.Run(() => DeploymentService.Evaluate(game));
+            DeploymentService.Apply(game, check);
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("附加目录后状态检查失败: " + ex);
+        }
+
         LibraryStore.Save(_data);
         UpdateStatusCard();
-
         WarnIfProtected(game);
     }
 

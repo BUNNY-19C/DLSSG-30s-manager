@@ -146,10 +146,17 @@ public sealed class DeploymentInfo
 
 public sealed class GameEntry : Observable
 {
+    /// <summary>
+    /// Sentinel preference value meaning "let the manager pick an entry name". Lives on the model
+    /// because the default below and <c>DeploymentService</c>'s comparisons must agree on the exact
+    /// string; one declaration, no magic copy.
+    /// </summary>
+    public const string AutoProxy = "自动";
+
     private string _name = "";
     private string _renderDir = "";
     private string _exePath = "";
-    private string _preferredProxy = "自动";
+    private string _preferredProxy = AutoProxy;
     private string _notes = "";
     private GameStatus _status = GameStatus.Unknown;
     private string _statusDetail = "";
@@ -228,8 +235,8 @@ public sealed class GameEntry : Observable
     /// Theme key for this status, resolved to a brush by <see cref="ThemeBrushConverter"/>.
     ///
     /// A key rather than a colour: the two themes need different values (the dark theme's green is
-    /// unreadable on white), and going through the converter means a theme switch updates the list
-    /// without the model knowing about brushes.
+    /// unreadable on white). The converter resolves through the binding, so a theme switch only
+    /// repaints once <see cref="RaiseThemeColors"/> re-notifies this property.
     /// </summary>
     [JsonIgnore]
     public string StatusColor => Status switch
@@ -240,12 +247,10 @@ public sealed class GameEntry : Observable
         _ => Palette.Idle,
     };
 
-    [JsonIgnore] public string Subtitle => string.IsNullOrWhiteSpace(RenderDir) ? Loc.T("Detail.NoPath") : RenderDir;
+    /// <summary>Re-raises the status-colour bindings after a theme dictionary swap.</summary>
+    public void RaiseThemeColors() => Raise(nameof(StatusColor));
 
-    [JsonIgnore]
-    public string DeploymentSummary => Deployment is null
-        ? Loc.T("Status.NotDeployedDetail")
-        : $"{Deployment.ProxyName} · Mod {Deployment.ModVersion} · {Deployment.DeployedAt}";
+    [JsonIgnore] public string Subtitle => string.IsNullOrWhiteSpace(RenderDir) ? Loc.T("Detail.NoPath") : RenderDir;
 
     /// <summary>
     /// Re-raises the change notifications for properties whose text is produced from the string table.
@@ -259,7 +264,6 @@ public sealed class GameEntry : Observable
         Raise(nameof(StatusText));
         Raise(nameof(StatusDetail));
         Raise(nameof(Subtitle));
-        Raise(nameof(DeploymentSummary));
         Raise(nameof(AntiCheatTitle));
         Raise(nameof(AntiCheatBody));
     }

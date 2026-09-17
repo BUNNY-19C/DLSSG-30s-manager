@@ -5,7 +5,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <!--
-                主题字典。这里放的是默认（深色）主题；启动时 App.OnStartup 会按用户
+                主题字典。这里放的是默认（深色）主题；主窗口构造函数会按用户
                 保存的偏好替换它。
 
                 窗口和对话框都必须用 DynamicResource 引用这里的键——StaticResource

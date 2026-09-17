@@ -64,6 +64,7 @@ public static class Program
             TestModSource(modRoot);
             TestIniRendering(modRoot);
             TestGpuProbe();
+            TestVersionLabel();
             TestLocalization();
             TestDeployRestore(modRoot, work);
             TestForeignFileProtection(modRoot, work);
@@ -350,13 +351,6 @@ public static class Program
         Section("Mod 文件源识别");
         if (SkipWithoutModFiles("Mod 文件源识别")) return;
 
-        // The version comes from the csproj locally and from the git tag in release builds. The
-        // harness is its own assembly, so this can only verify the format and that the commit-hash
-        // suffix the SDK appends is stripped; the app's real number is pinned in its csproj.
-        Check("版本号格式正确且剥离提交哈希",
-            System.Text.RegularExpressions.Regex.IsMatch(AppVersion.Label, @"^v\d+\.\d+\.\d+$"),
-            AppVersion.Label);
-
         var source = new ModSource(modRoot);
         Check("源目录有效", source.IsValid, source.ValidationMessage);
 
@@ -559,6 +553,20 @@ public static class Program
         Check("代理入口的存储值保持中文常量", entry.PreferredProxy == "自动", entry.PreferredProxy);
         Check("代理入口的存储值与语言无关",
             DeploymentService.AutoProxy == "自动", DeploymentService.AutoProxy);
+    }
+
+    /// <summary>
+    /// The version comes from the csproj locally and from the git tag in release builds. The harness
+    /// is its own assembly, so this can only verify the format and that the commit-hash suffix the
+    /// SDK appends is stripped; the app's real number is pinned in its csproj. Not gated on mod
+    /// files — it must run on a fresh clone too.
+    /// </summary>
+    private static void TestVersionLabel()
+    {
+        Section("版本号");
+        Check("版本号格式正确且剥离提交哈希",
+            System.Text.RegularExpressions.Regex.IsMatch(AppVersion.Label, @"^v\d+\.\d+\.\d+$"),
+            AppVersion.Label);
     }
 
     private static void TestGpuProbe()
@@ -824,6 +832,37 @@ public static class Program
         Check("其他 Mod 的 dxgi.dll 内容未变", Sha(foreignDxgi) == foreignDxgiHash);
         Check("原来的 INI 未被当作本项目的删除", File.Exists(foreignIni), "INI 被误删");
         Check("原来的 INI 内容未变", Sha(foreignIni) == foreignIniHash);
+
+        // Redeploy over an already-deployed game (a settings change, or a batch deploy) replaces the
+        // record; if the previous backups are not carried into the new one, a foreign INI displaced
+        // by the first deploy is orphaned in the restore folder forever.
+        var dir2 = MakeGameDir(work, "GameForeign2");
+        var foreignIni2 = Path.Combine(dir2, ModSource.IniName);
+        File.WriteAllText(foreignIni2, "; somebody else's config again\n[Other]\r\nKey=2\r\n");
+        var foreignIni2Hash = Sha(foreignIni2);
+
+        var game2 = new GameEntry
+        {
+            Name = "GameForeign2",
+            RenderDir = dir2,
+            PreferredProxy = DeploymentService.AutoProxy,
+            Profile = new GameProfile(),
+        };
+
+        Check("首次部署成功", DeploymentService.Deploy(game2, source).Ok);
+        Check("首次部署备份了外部 INI", game2.Deployment?.Backups.Count == 1);
+
+        game2.Profile.MaxGeneratedFrames = 2;
+        var redeploy = DeploymentService.Deploy(game2, source);
+        Check("二次部署成功", redeploy.Ok, redeploy.Message);
+        Check("二次部署结转了备份记录",
+            game2.Deployment?.Backups.Any(b => string.Equals(b.FileName, ModSource.IniName, StringComparison.OrdinalIgnoreCase)) == true);
+
+        var restore2 = DeploymentService.Restore(game2, removeLogs: false);
+        Check("二次部署后可恢复", restore2.Ok, restore2.Message);
+        Check("外部 INI 经二次部署后回位",
+            File.Exists(foreignIni2) && Sha(foreignIni2) == foreignIni2Hash, "外部 INI 未回位");
+        Check("恢复后目录里没有残留的自家代理", DeploymentService.FindInstalledProxy(dir2) is null);
     }
 
     private static void TestProxyOccupation(string modRoot, string work)
