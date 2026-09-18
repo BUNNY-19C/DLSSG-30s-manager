@@ -28,7 +28,7 @@
             <Setter Property="FontSize" Value="12.5" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{DynamicResource TextSection}" />
-            <Setter Property="Margin" Value="0,16,0,8" />
+            <Setter Property="Margin" Value="0,0,0,10" />
         </Style>
 
         <Style x:Key="FieldLabel" TargetType="TextBlock">
@@ -36,6 +36,16 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,10,0" />
             <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <!-- 详情区卡片：一个主题块一张卡，留白和描边做出层次 -->
+        <Style x:Key="SectionCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PanelBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16,13" />
+            <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
 
         <!-- 默认 TextBox 的模板不带圆角；这里给出带圆角的轻量模板。 -->
@@ -330,129 +340,127 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="16">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="160" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <!-- 品牌色标记：给窗口一个安静的锚点，不加图标也不抢视线 -->
-            <Border Grid.Column="0" Width="4" Margin="0,4,12,4" CornerRadius="2"
-                    Background="{DynamicResource AccentBrush}" />
-            <StackPanel Grid.Column="1">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:Tr App.Name}" FontSize="20" FontWeight="SemiBold" />
-                    <Border x:Name="VersionBadge" CornerRadius="4" Padding="7,2" Margin="10,0,0,4"
-                            Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource LineBrush}"
-                            BorderThickness="1" VerticalAlignment="Bottom">
-                        <TextBlock x:Name="VersionText" FontSize="11" Foreground="{DynamicResource TextMuted}" />
-                    </Border>
-                </StackPanel>
-                <TextBlock x:Name="SubtitleText" Foreground="{DynamicResource TextMuted}"
-                           FontSize="12" Margin="0,4,0,0"
-                           Text="{loc:Tr App.Subtitle}" />
-            </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                <Button x:Name="AdminButton" Content="{loc:Tr Toolbar.RestartAdmin}" Style="{StaticResource ToolButton}"
-                        Click="AdminButton_Click" />
-                <Button Content="{loc:Tr Toolbar.OpenDataDir}" Style="{StaticResource ToolButton}" Margin="0" Click="OpenDataDir_Click" />
-            </StackPanel>
-        </Grid>
-
-        <!-- Toolbar -->
-        <Border Grid.Row="1" Background="{DynamicResource PanelBackground}" CornerRadius="10"
-                Padding="16,12" Margin="0,16,0,14" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+        <!-- ═══════════ 顶栏：品牌 + 全局控件 ═══════════ -->
+        <Border Grid.Row="0" Background="{DynamicResource PanelBackground}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                Padding="16,9">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{loc:Tr Toolbar.ModSource}" Style="{StaticResource FieldLabel}" />
-                        <TextBlock x:Name="ModSourceText" VerticalAlignment="Center" FontSize="12"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="640" />
-                        <Border x:Name="ModSourceBadge" CornerRadius="4" Padding="7,2" Margin="8,0,0,0"
-                                Background="{DynamicResource BadgeOkBackground}" VerticalAlignment="Center">
-                            <TextBlock x:Name="ModSourceBadgeText" FontSize="11"
-                                       Foreground="{DynamicResource BadgeOkText}" />
-                        </Border>
-                    </StackPanel>
-                    <!-- 显卡型号与入口按钮固定一行；第二行只显示紧凑摘要，完整建议在悬停提示与启动日志里 -->
-                    <StackPanel Margin="0,7,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{loc:Tr Toolbar.Gpu}" Style="{StaticResource FieldLabel}" />
-                            <TextBlock x:Name="GpuText" VerticalAlignment="Center" FontSize="12" />
-                            <Button Content="{loc:Tr Toolbar.GpuName}" Style="{StaticResource ToolButton}"
-                                    Padding="10,4" FontSize="12" Margin="12,0,0,0" Click="GpuName_Click" />
-                        </StackPanel>
-                        <TextBlock x:Name="RouterHintText" Foreground="{DynamicResource TextMuted}"
-                                   FontSize="11.5" Margin="0,4,0,0" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="4" Height="26" CornerRadius="2" Margin="0,0,12,0"
+                            Background="{DynamicResource AccentBrush}" />
+                    <TextBlock Text="{loc:Tr App.Name}" FontSize="17" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <Border x:Name="VersionBadge" CornerRadius="4" Padding="7,1.5" Margin="10,0,0,0"
+                            Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1" VerticalAlignment="Center">
+                        <TextBlock x:Name="VersionText" FontSize="11" Foreground="{DynamicResource TextMuted}" />
+                    </Border>
+                    <TextBlock x:Name="SubtitleText" Foreground="{DynamicResource TextFaint}"
+                               FontSize="11.5" Margin="12,0,0,0" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="420"
+                               Text="{loc:Tr App.Subtitle}" />
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="{loc:Tr Toolbar.ScanSteam}" Style="{StaticResource ToolButton}" Click="ScanSteam_Click" />
-                    <Button Content="{loc:Tr Toolbar.ScanFolder}" Style="{StaticResource ToolButton}" Click="ScanFolder_Click" />
-                    <Button Content="{loc:Tr Toolbar.AddProxy}" Style="{StaticResource ToolButton}"
-                            Click="AddProxy_Click" ToolTip="{loc:Tr Toolbar.AddProxyTip}" />
-                    <Button Content="{loc:Tr Toolbar.UpdateMod}" Style="{StaticResource ToolButton}"
-                            Click="UpdateMod_Click" Margin="0"
-                            ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
-                    <ComboBox x:Name="ThemeCombo" Width="96" Margin="10,0,0,0"
-                              VerticalAlignment="Center"
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ComboBox x:Name="ThemeCombo" Width="92" Margin="0,0,0,0" VerticalAlignment="Center"
                               ToolTip="{loc:Tr Toolbar.Theme}"
                               SelectionChanged="ThemeCombo_SelectionChanged" />
-                    <ComboBox x:Name="LanguageCombo" Width="118" Margin="8,0,0,0"
-                              VerticalAlignment="Center"
+                    <ComboBox x:Name="LanguageCombo" Width="112" Margin="6,0,0,0" VerticalAlignment="Center"
                               ToolTip="{loc:Tr Toolbar.Language}"
                               SelectionChanged="LanguageCombo_SelectionChanged" />
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Body -->
+        <!-- ═══════════ 信息条：Mod 源 / 显卡 / 全局操作 ═══════════ -->
+        <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                Padding="16,10">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Tr Toolbar.ModSource}" Style="{StaticResource FieldLabel}" />
+                    <TextBlock x:Name="ModSourceText" VerticalAlignment="Center" FontSize="12"
+                               TextTrimming="CharacterEllipsis" MaxWidth="700" />
+                    <Border x:Name="ModSourceBadge" CornerRadius="4" Padding="7,2" Margin="8,0,0,0"
+                            Background="{DynamicResource BadgeOkBackground}" VerticalAlignment="Center">
+                        <TextBlock x:Name="ModSourceBadgeText" FontSize="11"
+                                   Foreground="{DynamicResource BadgeOkText}" />
+                    </Border>
+                </StackPanel>
+                <!-- 显卡型号与入口按钮固定一行；第二行只显示紧凑摘要，完整建议在悬停提示与启动日志里 -->
+                <StackPanel Margin="0,6,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{loc:Tr Toolbar.Gpu}" Style="{StaticResource FieldLabel}" />
+                        <TextBlock x:Name="GpuText" VerticalAlignment="Center" FontSize="12" />
+                        <Button Content="{loc:Tr Toolbar.GpuName}" Style="{StaticResource ToolButton}"
+                                Padding="10,3.5" FontSize="12" Margin="12,0,0,0" Click="GpuName_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="RouterHintText" Foreground="{DynamicResource TextMuted}"
+                               FontSize="11.5" Margin="0,3,0,0" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <!-- 全局操作单独一行：左对齐、可折行，任何窗口宽度都不被裁掉 -->
+                <WrapPanel Margin="0,9,-6,0">
+                    <Button Content="{loc:Tr Toolbar.ScanSteam}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="ScanSteam_Click" />
+                    <Button Content="{loc:Tr Toolbar.ScanFolder}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="ScanFolder_Click" />
+                    <Button Content="{loc:Tr Toolbar.AddProxy}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="AddProxy_Click" ToolTip="{loc:Tr Toolbar.AddProxyTip}" />
+                    <Button Content="{loc:Tr Toolbar.UpdateMod}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="UpdateMod_Click"
+                            ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
+                    <Button x:Name="AdminButton" Content="{loc:Tr Toolbar.RestartAdmin}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="AdminButton_Click" />
+                    <Button Content="{loc:Tr Toolbar.OpenDataDir}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="OpenDataDir_Click" />
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ═══════════ 主体：侧边栏 + 详情卡片区 ═══════════ -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="300" MinWidth="240" MaxWidth="420" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Game list -->
-            <Border Grid.Column="0" Background="{DynamicResource PanelBackground}" CornerRadius="10"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+            <!-- 侧边栏：游戏列表 + 批量操作 -->
+            <Border Grid.Column="0" Background="{DynamicResource PanelBackground}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="14,12,14,10">
+                    <Grid Grid.Row="0" Margin="14,12,12,10">
                         <TextBlock Text="{loc:Tr List.Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="{loc:Tr List.Add}" Style="{StaticResource ToolButton}" Padding="10,5"
+                            <Button Content="{loc:Tr List.Add}" Style="{StaticResource ToolButton}" Padding="9,4"
                                     FontSize="12" Margin="0,0,6,0" Click="AddGame_Click"
                                     ToolTip="{loc:Tr List.AddTip}" />
-                            <Button Content="{loc:Tr List.Remove}" Style="{StaticResource ToolButton}" Padding="10,5"
+                            <Button Content="{loc:Tr List.Remove}" Style="{StaticResource ToolButton}" Padding="9,4"
                                     FontSize="12" Margin="0" Click="RemoveGame_Click" />
                         </StackPanel>
                     </Grid>
 
                     <ListBox x:Name="GameList" Grid.Row="1" Background="Transparent" BorderThickness="0"
-                             Margin="6,0,6,8" SelectionChanged="GameList_SelectionChanged"
+                             Margin="8,0,8,6" SelectionChanged="GameList_SelectionChanged"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
@@ -504,16 +512,28 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+
+                    <!-- 批量操作：低频，收在边栏底部 -->
+                    <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+                            Padding="12,9">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="{loc:Tr Action.DeployAll}" Style="{StaticResource ToolButton}"
+                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="DeployAll_Click" />
+                            <Button Content="{loc:Tr Action.RestoreAll}" Style="{StaticResource DangerButton}"
+                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="RestoreAll_Click" />
+                            <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}"
+                                    Padding="10,5" FontSize="12" Margin="0" Click="RefreshAll_Click" />
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
 
-            <!-- Detail -->
-            <Border Grid.Column="2" Background="{DynamicResource PanelBackground}" CornerRadius="10"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18,14,18,16">
+            <!-- 详情区 -->
+            <Border Grid.Column="1" Background="{DynamicResource WindowBackground}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,14,16,14">
                     <StackPanel>
                         <TextBlock x:Name="NoSelectionText" Text="{loc:Tr List.Empty}"
-                                   Foreground="{DynamicResource TextMuted}" Margin="0,20,0,0" />
+                                   Foreground="{DynamicResource TextMuted}" Margin="0,24,0,0" />
 
                         <StackPanel x:Name="DetailPanel" Visibility="Collapsed">
                             <Border x:Name="AntiCheatBanner" Background="{DynamicResource WarnBannerBackground}" BorderBrush="{DynamicResource WarnBannerBorder}"
@@ -527,176 +547,187 @@
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="{loc:Tr Detail.GroupGame}" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                            <!-- 卡片：游戏 -->
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <TextBlock Text="{loc:Tr Detail.GroupGame}" Style="{StaticResource SectionTitle}" />
 
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Tr Detail.Name}" Style="{StaticResource FieldLabel}" />
-                                <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
-                            </Grid>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{loc:Tr Detail.Name}" Style="{StaticResource FieldLabel}" />
+                                        <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                                    </Grid>
 
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Tr Detail.RenderDir}" Style="{StaticResource FieldLabel}" />
-                                <TextBox Grid.Column="1" Text="{Binding RenderDir, UpdateSourceTrigger=PropertyChanged}" />
-                                <Button Grid.Column="2" Content="{loc:Tr Common.Browse}" Style="{StaticResource ToolButton}"
-                                        Margin="8,0,4,0" Click="BrowseRenderDir_Click" />
-                                <Button Grid.Column="3" Content="{loc:Tr Detail.Detect}" Style="{StaticResource ToolButton}"
-                                        Margin="0" Click="DetectRenderDir_Click" />
-                            </Grid>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{loc:Tr Detail.RenderDir}" Style="{StaticResource FieldLabel}" />
+                                        <TextBox Grid.Column="1" Text="{Binding RenderDir, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Grid.Column="2" Content="{loc:Tr Common.Browse}" Style="{StaticResource ToolButton}"
+                                                Padding="10,5" Margin="8,0,4,0" Click="BrowseRenderDir_Click" />
+                                        <Button Grid.Column="3" Content="{loc:Tr Detail.Detect}" Style="{StaticResource ToolButton}"
+                                                Padding="10,5" Margin="0" Click="DetectRenderDir_Click" />
+                                    </Grid>
 
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Tr Detail.ExePath}" Style="{StaticResource FieldLabel}" />
-                                <TextBox Grid.Column="1" Text="{Binding ExePath, UpdateSourceTrigger=PropertyChanged}" />
-                                <Button Grid.Column="2" Content="{loc:Tr Common.Browse}" Style="{StaticResource ToolButton}"
-                                        Margin="8,0,0,0" Click="BrowseExe_Click" />
-                            </Grid>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{loc:Tr Detail.ExePath}" Style="{StaticResource FieldLabel}" />
+                                        <TextBox Grid.Column="1" Text="{Binding ExePath, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Grid.Column="2" Content="{loc:Tr Common.Browse}" Style="{StaticResource ToolButton}"
+                                                Padding="10,5" Margin="8,0,0,0" Click="BrowseExe_Click" />
+                                    </Grid>
 
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Tr Detail.ProxyEntry}" Style="{StaticResource FieldLabel}" />
-                                <!-- Items are built in code: the list is the source's available entry
-                                     names, which grows when the user adds a proxy DLL. Tag carries the
-                                     stable value the code compares against; Content is the localised
-                                     label. Binding SelectedValue to Content would break as soon as the
-                                     UI language changed. -->
-                                <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Tag"
-                                          SelectionChanged="ProxyCombo_SelectionChanged" />
-                            </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{loc:Tr Detail.ProxyEntry}" Style="{StaticResource FieldLabel}" />
+                                        <!-- Items are built in code: the list is the source's available entry
+                                             names, which grows when the user adds a proxy DLL. Tag carries the
+                                             stable value the code compares against; Content is the localised
+                                             label. Binding SelectedValue to Content would break as soon as the
+                                             UI language changed. -->
+                                        <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Tag"
+                                                  SelectionChanged="ProxyCombo_SelectionChanged" />
+                                    </Grid>
 
-                            <TextBlock Text="{loc:Tr Detail.ProxyNote}"
-                                       Foreground="{DynamicResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="88,0,0,12" />
-
-                            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,4,0,4" />
-
-                            <TextBlock Text="{loc:Tr Detail.GroupFg}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
-
-                            <!--
-                                两组配置项，按 mod 源里的 INI schema 显示一组：
-                                  · 0.3.3（当前）Enabled / Optimized(0-3 档位) / Preset
-                                  · 0.2.x（旧）  Router / KernelImage / HardwareBilinear + 诊断段
-                                管理器只写模板里存在的键，所以显示另一组的键不会有任何作用——
-                                与其留三个点了没反应的控件，不如按 schema 隐藏。
-                            -->
-                            <StackPanel x:Name="ModernSettings">
-                                <CheckBox Content="{loc:Tr Detail.Enabled}"
-                                          IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8" />
-                                <!-- 0.3.3: Optimized is a 0-3 consistency tier, not a boolean. The
-                                     items are built in code (BuildLocalizedCombos) because their
-                                     labels are translated and must follow the interface language. -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="88" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{loc:Tr Detail.OptimizedTier}" Style="{StaticResource FieldLabel}" />
-                                    <ComboBox x:Name="TierCombo" Grid.Column="1"
-                                              DisplayMemberPath="Text" SelectedValuePath="Value"
-                                              SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
-                                              ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="88" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
-                                    <ComboBox Grid.Column="1" SelectedValuePath="Content"
-                                              SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
-                                              ToolTip="{loc:Tr Detail.PresetTip}">
-                                        <ComboBoxItem Content="Auto" />
-                                        <ComboBoxItem Content="A" />
-                                        <ComboBoxItem Content="B" />
-                                    </ComboBox>
-                                </Grid>
-                            </StackPanel>
-
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="88" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
-                                <ComboBox x:Name="FrameCombo" Grid.Column="1" Margin="0,0,14,0"
-                                          DisplayMemberPath="Text" SelectedValuePath="Value"
-                                          SelectedValue="{Binding Profile.MaxGeneratedFrames, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2" Text="{loc:Tr Detail.LogLevel}" Style="{StaticResource FieldLabel}" />
-                                <ComboBox x:Name="LogCombo" Grid.Column="3" Width="150"
-                                          DisplayMemberPath="Text" SelectedValuePath="Value"
-                                          SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
-                            </Grid>
-
-                            <StackPanel x:Name="LegacySettings">
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="88" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="88" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{loc:Tr Detail.Router}" Style="{StaticResource FieldLabel}" />
-                                    <ComboBox Grid.Column="1" SelectedValuePath="Content" Margin="0,0,14,0"
-                                              SelectedValue="{Binding Profile.Router, Mode=TwoWay}">
-                                        <ComboBoxItem Content="SM86" />
-                                        <ComboBoxItem Content="SM75" />
-                                    </ComboBox>
-                                    <TextBlock Grid.Column="2" Text="{loc:Tr Detail.KernelImage}" Style="{StaticResource FieldLabel}" />
-                                    <ComboBox Grid.Column="3" Width="150" SelectedValuePath="Content"
-                                              SelectedValue="{Binding Profile.KernelImage, Mode=TwoWay}">
-                                        <ComboBoxItem Content="PTX" />
-                                        <ComboBoxItem Content="Auto" />
-                                        <ComboBoxItem Content="Cubin" />
-                                    </ComboBox>
-                                </Grid>
-                                <CheckBox Content="{loc:Tr Detail.HardwareBilinear}"
-                                          IsChecked="{Binding Profile.HardwareBilinear, Mode=TwoWay}" Margin="0,2,0,8" />
-                                <CheckBox Content="{loc:Tr Detail.Diagnostics}"
-                                          IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="0,0,0,4" />
-                            </StackPanel>
-
-                            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,14,0,4" />
-
-                            <TextBlock Text="{loc:Tr Detail.GroupActions}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
-
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
-                                            Click="Deploy_Click" />
-                                    <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
-                                            Click="Restore_Click" />
-                                    <Button x:Name="AdoptButton" Content="{loc:Tr Action.Adopt}" Style="{StaticResource ToolButton}"
-                                            Click="Adopt_Click" />
+                                    <TextBlock Text="{loc:Tr Detail.ProxyNote}"
+                                               Foreground="{DynamicResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="88,4,0,0" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button Content="{loc:Tr Action.Check}" Style="{StaticResource ToolButton}" Click="Check_Click" />
-                                    <Button Content="{loc:Tr Action.OpenDir}" Style="{StaticResource ToolButton}" Click="OpenRenderDir_Click" />
-                                    <Button Content="{loc:Tr Action.Launch}" Style="{StaticResource ToolButton}" Click="Launch_Click" />
-                                    <Button x:Name="OpenLogButton" Content="{loc:Tr Action.ViewLog}" Style="{StaticResource ToolButton}"
-                                            Click="OpenModLog_Click" Margin="0" />
-                                </StackPanel>
-                                <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
-                                          IsChecked="False" Margin="0,2,0,0" />
-                            </StackPanel>
+                            </Border>
 
-                            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="14,11" Margin="0,16,0,0"
+                            <!-- 卡片：插帧配置 -->
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <TextBlock Text="{loc:Tr Detail.GroupFg}" Style="{StaticResource SectionTitle}" />
+
+                                    <!--
+                                        两组配置项，按 mod 源里的 INI schema 显示一组：
+                                          · 0.3.3（当前）Enabled / Optimized(0-3 档位) / Preset
+                                          · 0.2.x（旧）  Router / KernelImage / HardwareBilinear + 诊断段
+                                        管理器只写模板里存在的键，所以显示另一组的键不会有任何作用——
+                                        与其留三个点了没反应的控件，不如按 schema 隐藏。
+                                    -->
+                                    <StackPanel x:Name="ModernSettings">
+                                        <CheckBox Content="{loc:Tr Detail.Enabled}"
+                                                  IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8" />
+                                        <!-- 0.3.3: Optimized is a 0-3 consistency tier, not a boolean. The
+                                             items are built in code (BuildLocalizedCombos) because their
+                                             labels are translated and must follow the interface language. -->
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{loc:Tr Detail.OptimizedTier}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox x:Name="TierCombo" Grid.Column="1"
+                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
+                                                      ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
+                                        </Grid>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox Grid.Column="1" SelectedValuePath="Content"
+                                                      SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
+                                                      ToolTip="{loc:Tr Detail.PresetTip}">
+                                                <ComboBoxItem Content="Auto" />
+                                                <ComboBoxItem Content="A" />
+                                                <ComboBoxItem Content="B" />
+                                            </ComboBox>
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox x:Name="FrameCombo" Grid.Column="1" Margin="0,0,14,0"
+                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Profile.MaxGeneratedFrames, Mode=TwoWay}" />
+                                            <TextBlock Grid.Column="2" Text="{loc:Tr Detail.LogLevel}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox x:Name="LogCombo" Grid.Column="3" Width="150"
+                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <StackPanel x:Name="LegacySettings">
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{loc:Tr Detail.Router}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox Grid.Column="1" SelectedValuePath="Content" Margin="0,0,14,0"
+                                                      SelectedValue="{Binding Profile.Router, Mode=TwoWay}">
+                                                <ComboBoxItem Content="SM86" />
+                                                <ComboBoxItem Content="SM75" />
+                                            </ComboBox>
+                                            <TextBlock Grid.Column="2" Text="{loc:Tr Detail.KernelImage}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox Grid.Column="3" Width="150" SelectedValuePath="Content"
+                                                      SelectedValue="{Binding Profile.KernelImage, Mode=TwoWay}">
+                                                <ComboBoxItem Content="PTX" />
+                                                <ComboBoxItem Content="Auto" />
+                                                <ComboBoxItem Content="Cubin" />
+                                            </ComboBox>
+                                        </Grid>
+                                        <CheckBox Content="{loc:Tr Detail.HardwareBilinear}"
+                                                  IsChecked="{Binding Profile.HardwareBilinear, Mode=TwoWay}" Margin="0,2,0,8" />
+                                        <CheckBox Content="{loc:Tr Detail.Diagnostics}"
+                                                  IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="0,0,0,4" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 卡片：操作 -->
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <TextBlock Text="{loc:Tr Detail.GroupActions}" Style="{StaticResource SectionTitle}" />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
+                                                Click="Deploy_Click" />
+                                        <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
+                                                Click="Restore_Click" />
+                                        <Button x:Name="AdoptButton" Content="{loc:Tr Action.Adopt}" Style="{StaticResource ToolButton}"
+                                                Click="Adopt_Click" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Button Content="{loc:Tr Action.Check}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Click="Check_Click" />
+                                        <Button Content="{loc:Tr Action.OpenDir}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Click="OpenRenderDir_Click" />
+                                        <Button Content="{loc:Tr Action.Launch}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Click="Launch_Click" />
+                                        <Button x:Name="OpenLogButton" Content="{loc:Tr Action.ViewLog}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Click="OpenModLog_Click" Margin="0" />
+                                    </StackPanel>
+                                    <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
+                                              IsChecked="False" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="14,11"
                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                     x:Name="StatusCard">
                                 <StackPanel>
@@ -711,27 +742,27 @@
             </Border>
         </Grid>
 
-        <!-- Batch bar -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="2,14,0,12">
-            <Button Content="{loc:Tr Action.DeployAll}" Style="{StaticResource ToolButton}" Click="DeployAll_Click" />
-            <Button Content="{loc:Tr Action.RestoreAll}" Style="{StaticResource DangerButton}" Click="RestoreAll_Click" />
-            <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}" Margin="0" Click="RefreshAll_Click" />
-            <TextBlock x:Name="BatchStatusText" VerticalAlignment="Center" Margin="8,0,0,0"
-                       Foreground="{DynamicResource TextMuted}" FontSize="12" />
-        </StackPanel>
-
-        <!-- Log -->
-        <Border Grid.Row="4" Background="{DynamicResource LogBackground}" CornerRadius="10"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+        <!-- ═══════════ 日志条 ═══════════ -->
+        <Border Grid.Row="3" Background="{DynamicResource LogBackground}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="96" />
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="14,10,14,6">
-                    <TextBlock Text="{loc:Tr Action.Output}" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextLogTitle}" />
-                    <Button Content="{loc:Tr Action.Clear}" HorizontalAlignment="Right" Padding="10,3" FontSize="11"
-                            Style="{StaticResource ToolButton}" Click="ClearLog_Click" />
+                <Grid Grid.Row="0" Margin="14,8,14,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{loc:Tr Action.Output}" FontWeight="SemiBold" FontSize="12"
+                               Foreground="{DynamicResource TextLogTitle}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="BatchStatusText" Grid.Column="1" VerticalAlignment="Center"
+                               Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                    <Button Grid.Column="2" Content="{loc:Tr Action.Clear}" Padding="10,3" FontSize="11"
+                            Style="{StaticResource ToolButton}" Margin="0" Click="ClearLog_Click" />
                 </Grid>
                 <TextBox x:Name="OutputBox" Grid.Row="1" Margin="12,0,12,10" IsReadOnly="True"
                          Background="{DynamicResource LogBackground}" BorderThickness="0" Foreground="{DynamicResource TextOnLog}"
