@@ -321,7 +321,7 @@ public static partial class Strings
         ["Fetch.ContentTooLarge"] = "下载内容超过大小上限，已中止。",
         ["Fetch.BadArchive"] = "压缩包结构异常：未找到内容目录。",
         ["Fetch.EscapeAttempt"] = "文件路径指向目标目录之外。",
-        ["Fetch.UrlRejected"] = "地址不允许：{0}",
+        ["Fetch.UrlRejected"] = "地址不允许：{0}（若使用代理或 hosts 加速，请确认系统代理已开启）",
         ["Fetch.RedirectRejected"] = "重定向目标不允许：{0}",
         ["Fetch.HttpFailed"] = "请求失败（HTTP {1}）：{0}",
         ["Fetch.RedirectNoTarget"] = "重定向缺少目标地址。",

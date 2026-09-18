@@ -2004,6 +2004,16 @@ public static class Program
         Check("拒绝内网地址", !ModFetcher.IsAllowedAddress(new Uri("https://192.168.1.1/x")));
         Check("拒绝 file 协议", !ModFetcher.IsAllowedAddress(new Uri("file:///C:/x")));
 
+        // Proxy-routed requests skip the resolved-address check (the connection goes to the proxy,
+        // and poisoned DNS used to reject every source for such users) but not the scheme or the
+        // host allow-list.
+        Check("代理路由：白名单域名放行",
+            ModFetcher.IsAllowedAddress(new Uri("https://raw.githubusercontent.com/a/b"), proxyRouted: true));
+        Check("代理路由：仍拒绝 HTTP",
+            !ModFetcher.IsAllowedAddress(new Uri("http://github.com/a/b"), proxyRouted: true));
+        Check("代理路由：仍拒绝非白名单域名",
+            !ModFetcher.IsAllowedAddress(new Uri("https://evil.example.com/x"), proxyRouted: true));
+
         // Every configured source must itself pass the policy: a source added to the list but
         // rejected by the allow-list would silently never work.
         foreach (var source in ModFetcher.SourceIds)

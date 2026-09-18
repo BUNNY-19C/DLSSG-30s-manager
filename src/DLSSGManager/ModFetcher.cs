@@ -324,16 +324,55 @@ public static class ModFetcher
         return matched;
     }
 
-    public static bool IsAllowedAddress(Uri uri)
+    /// <summary>
+    /// Whether a request may be sent: HTTPS only, on an allow-listed host whose resolved addresses
+    /// must all be public. See the two-argument overload for the proxy exception.
+    /// </summary>
+    public static bool IsAllowedAddress(Uri uri) => IsAllowedAddress(uri, ResolveProxyRouted(uri));
+
+    /// <summary>
+    /// The policy with the proxy state made explicit, for tests and callers that already know it.
+    /// </summary>
+    /// <param name="proxyRouted">
+    /// True when a system proxy will carry the request. The resolved-address check guards against
+    /// being steered at an internal network; with a proxy the connection goes to the proxy, not to
+    /// whatever this machine's resolver answers — and on networks where GitHub's domains resolve to
+    /// loopback or 0.0.0.0 (poisoned DNS, hosts-file accelerators), the strict check rejected every
+    /// source even though the download itself would have worked. The scheme check, the host
+    /// allow-list and the payload signature checks all still apply.
+    /// </param>
+    public static bool IsAllowedAddress(Uri uri, bool proxyRouted)
     {
         if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
         if (!AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase)) return false;
+
+        if (proxyRouted) return true;
 
         IPAddress[] addresses;
         try { addresses = Dns.GetHostAddresses(uri.Host); }
         catch { return false; }
 
         return addresses.Length > 0 && addresses.All(IsPublicAddress);
+    }
+
+    /// <summary>
+    /// True when the system proxy will carry this request — the same proxy <c>HttpClientHandler</c>
+    /// uses by default, which is what makes the check meaningful. If the proxy API is unavailable,
+    /// the strict path is kept.
+    /// </summary>
+    private static bool ResolveProxyRouted(Uri uri)
+    {
+        try
+        {
+            var target = WebRequest.DefaultWebProxy?.GetProxy(uri);
+            return target is not null &&
+                   !string.Equals(target.GetLeftPart(UriPartial.Authority),
+                                  uri.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsPublicAddress(IPAddress ip)

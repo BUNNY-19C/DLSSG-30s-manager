@@ -321,7 +321,7 @@ public static partial class Strings
         ["Fetch.ContentTooLarge"] = "Download exceeds the size limit, aborted.",
         ["Fetch.BadArchive"] = "Unexpected archive layout: no content folder found.",
         ["Fetch.EscapeAttempt"] = "An archive entry points outside the destination folder.",
-        ["Fetch.UrlRejected"] = "Address not allowed: {0}",
+        ["Fetch.UrlRejected"] = "Address not allowed: {0} (if you use a proxy or a hosts-file accelerator, make sure the system proxy is enabled)",
         ["Fetch.RedirectRejected"] = "Redirect target not allowed: {0}",
         ["Fetch.HttpFailed"] = "Request failed (HTTP {1}): {0}",
         ["Fetch.RedirectNoTarget"] = "Redirect has no target address.",
