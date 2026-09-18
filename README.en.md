@@ -36,7 +36,7 @@ The mod files (about 101 MB) are not bundled and setup does not download them ei
 ## Notes
 
 - **Entry names**: `version.dll` by default, plus `winmm`, `dinput8`, `dbghelp`, `dxgi` and `d3d12`. If another mod occupies a name, the manager picks a different one.
-- **Settings** are stored per game (frame generation, optimized kernels, render preset, multiplier ceiling, log level) and written into `dlssg_sm86.ini` on deploy.
+- **Settings** are stored per game (frame generation, consistency tier 0-3, render preset, multiplier ceiling, log level) and written into `dlssg_sm86.ini` on deploy.
 - **Restore** only deletes files whose signature and hash both check out; displaced originals are backed up to `%APPDATA%\DLSSGManager\restore\` first.
 - **Hand-installed copies** can be adopted, including a community `d3d12.dll` dropped in by hand (recognised by its hash).
 - **GPU**: for RTX 30 series (validated by the author on a 3080 Ti). 40/50 series support frame generation natively and do not need this. VRAM grows with output resolution, about +700–770 MiB at 4K.

@@ -589,7 +589,7 @@
 
                             <!--
                                 两组配置项，按 mod 源里的 INI schema 显示一组：
-                                  · 0.3.0（当前）Enabled / Optimized / Preset
+                                  · 0.3.3（当前）Enabled / Optimized(0-3 档位) / Preset
                                   · 0.2.x（旧）  Router / KernelImage / HardwareBilinear + 诊断段
                                 管理器只写模板里存在的键，所以显示另一组的键不会有任何作用——
                                 与其留三个点了没反应的控件，不如按 schema 隐藏。
@@ -597,8 +597,20 @@
                             <StackPanel x:Name="ModernSettings">
                                 <CheckBox Content="{loc:Tr Detail.Enabled}"
                                           IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8" />
-                                <CheckBox Content="{loc:Tr Detail.Optimized}"
-                                          IsChecked="{Binding Profile.Optimized, Mode=TwoWay}" Margin="0,0,0,8" />
+                                <!-- 0.3.3: Optimized is a 0-3 consistency tier, not a boolean. The
+                                     items are built in code (BuildLocalizedCombos) because their
+                                     labels are translated and must follow the interface language. -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Tr Detail.OptimizedTier}" Style="{StaticResource FieldLabel}" />
+                                    <ComboBox x:Name="TierCombo" Grid.Column="1"
+                                              DisplayMemberPath="Text" SelectedValuePath="Value"
+                                              SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
+                                              ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
+                                </Grid>
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="88" />

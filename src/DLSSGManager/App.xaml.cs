@@ -59,7 +59,14 @@ public partial class App : Application
         {
             var progress = new Progress<string>(text => AppPaths.Log("[fetch] " + text));
 
-            var result = ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None)
+            // Same probe the UI paths run, so the version marker written beside the payload names
+            // the release actually fetched — without it the badge keeps showing the old number.
+            var detected = ModFetcher.DetectLatestVersionAsync(CancellationToken.None)
+                .GetAwaiter().GetResult();
+            AppPaths.Log("[fetch] 探测上游版本: " + (detected ?? "(未知)"));
+
+            var result = ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None,
+                                                      versionLabel: detected)
                 .GetAwaiter().GetResult();
 
             foreach (var line in result.Lines) AppPaths.Log("[fetch] " + line);

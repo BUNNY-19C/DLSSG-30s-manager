@@ -98,6 +98,18 @@ public partial class MainWindow : Window
             new Choice(3, Loc.T("Detail.Log3")),
         };
         if (level is not null) LogCombo.SelectedValue = level;
+
+        // The 0.3.3 consistency tier. Labels are translated, so the items are rebuilt on a
+        // language change like the other numeric dropdowns; the selected value is the plain 0-3.
+        var tier = TierCombo.SelectedValue;
+        TierCombo.ItemsSource = new[]
+        {
+            new Choice(0, Loc.T("Detail.Tier0")),
+            new Choice(1, Loc.T("Detail.Tier1")),
+            new Choice(2, Loc.T("Detail.Tier2")),
+            new Choice(3, Loc.T("Detail.Tier3")),
+        };
+        if (tier is not null) TierCombo.SelectedValue = tier;
     }
 
     /// <summary>Fills the language picker without triggering the change handler.</summary>

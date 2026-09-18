@@ -533,7 +533,7 @@ public static class DeploymentService
             {
                 r.Note(Loc.T("Detail.SettingSummaryModern",
                     Loc.T(game.Profile.Enabled ? "Deploy.On" : "Deploy.Off"),
-                    Loc.T(game.Profile.Optimized ? "Deploy.On" : "Deploy.Off"),
+                    game.Profile.OptimizedTier,
                     game.Profile.Preset,
                     game.Profile.MaxGeneratedFrames + 1,
                     game.Profile.LogLevel));
@@ -800,25 +800,22 @@ public static class DeploymentService
         var root = game.RenderDir;
         var prev = game.Deployment;
 
-        // More than one proxy of ours is a hard fault: the game loads every entry name it recognises,
-        // so two would run two inference pipelines and crash. This is reported ahead of the normal
-        // status because it needs fixing before the game is launched, not merely noted.
+        // Since 0.3.3 several proxies of the project may share a folder by design: the first one the
+        // game loads becomes active and the rest forward their exports without installing hooks, so
+        // there is no second pipeline and no crash. Extra proxies are therefore reported as a note
+        // on the normal status, not as a fault. (The manager itself still installs exactly one.)
         var liveProxies = OwnedEntryNames(prev)
             .Where(n => File.Exists(Path.Combine(root, n)) && IsOurProxyAt(root, n, prev))
             .ToList();
-
-        if (liveProxies.Count > 1)
-        {
-            return new GameCheck(GameStatus.Modified,
-                Loc.T("Status.MultipleProxies", liveProxies.Count, Loc.Join(liveProxies)),
-                protection);
-        }
+        var standby = liveProxies.Count > 1
+            ? " " + Loc.T("Status.StandbyNote", liveProxies.Count - 1)
+            : "";
 
         if (prev is null)
         {
             var found = FindInstalledProxy(root);
             return new GameCheck(GameStatus.NotDeployed,
-                found is null ? Loc.T("Status.NotDeployedDetail") : Loc.T("Status.ManualInstall", found),
+                found is null ? Loc.T("Status.NotDeployedDetail") : Loc.T("Status.ManualInstall", found) + standby,
                 protection);
         }
 
@@ -847,7 +844,7 @@ public static class DeploymentService
 
             return proxyMatch && iniMatch
                 ? new GameCheck(GameStatus.Deployed,
-                    $"Mod {prev.ModVersion} · {prev.ProxyName} · {prev.DeployedAt}", protection)
+                    $"Mod {prev.ModVersion} · {prev.ProxyName} · {prev.DeployedAt}" + standby, protection)
                 : new GameCheck(GameStatus.Modified,
                     proxyMatch ? Loc.T("Status.IniModified") : Loc.T("Status.ProxyMismatch"),
                     protection);

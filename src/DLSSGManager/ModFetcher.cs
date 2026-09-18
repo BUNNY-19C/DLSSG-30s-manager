@@ -214,20 +214,18 @@ public static class ModFetcher
         // Templates carry {repo}/{ref}/{path} rather than a baked-in repository, so the list can serve
         // more than one repository without duplicating every endpoint.
         //
-        // One request, compressed (~28 MB). Preferred when reachable.
-        new("codeload", "Fetch.SourceCodeload", true,
-            "https://codeload.github.com/{repo}/zip/refs/heads/{ref}", true),
+        // Per-file sources come first since 0.3.3: the repository grew a second build variant
+        // (310.1/) and an archive/ of old releases, so a whole-branch zip now carries ~470 MB where
+        // the payload needs ~210 MB. Fetching only the listed files is the smaller request. The two
+        // archive endpoints stay as fallbacks — one request each, useful when per-file endpoints are
+        // rate-limited.
 
-        // Same content through a different entry point; useful when codeload is throttled.
-        new("zipball", "Fetch.SourceZipball", true,
-            "https://api.github.com/repos/{repo}/zipball/{ref}", true),
-
-        // Per-file raw access. Slower (~78 MB uncompressed) but a distinct path from codeload.
+        // Per-file raw access: the authority itself, exact bytes, no cache between us and the repo.
         new("raw", "Fetch.SourceRaw", true,
             "https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
 
         // Chinese acceleration proxy. It forwards both raw files and codeload archives, and measured
-        // fastest of the mirrors here (a 15 MB file in under a second), so it is tried before the CDN.
+        // fastest of the mirrors here (a 15 MB file in under a second), so it is tried next.
         new("ghproxy", "Fetch.SourceGhProxy", false,
             "https://gh-proxy.com/https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
 
@@ -235,10 +233,18 @@ public static class ModFetcher
         new("jsdelivr", "Fetch.SourceJsDelivr", false,
             "https://cdn.jsdelivr.net/gh/{repo}@{ref}/{path}", false),
 
-        // Another Chinese proxy. Verified for raw files only — it returns 403 for codeload archives, so
-        // it is per-file like the two above and kept last as a final fallback.
+        // Another Chinese proxy. Verified for raw files only — it returns 403 for codeload archives,
+        // so it is per-file like the two above and kept last of the mirrors.
         new("ghfast", "Fetch.SourceGhFast", false,
             "https://ghfast.top/https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
+
+        // One request, the whole branch (now much larger than the payload; see above).
+        new("codeload", "Fetch.SourceCodeload", true,
+            "https://codeload.github.com/{repo}/zip/refs/heads/{ref}", true),
+
+        // Same content through a different entry point; useful when codeload is throttled.
+        new("zipball", "Fetch.SourceZipball", true,
+            "https://api.github.com/repos/{repo}/zipball/{ref}", true),
     };
 
     /// <summary>Builds a concrete address from a source template.</summary>
@@ -507,9 +513,9 @@ public static class ModFetcher
 
             // The shipped INI stopped carrying a version banner in 0.3.0, so the label detected before
             // the download is remembered on disk — otherwise the badge would have nothing to show and
-            // the next start could not tell which release is installed.
-            if (!string.IsNullOrWhiteSpace(versionLabel))
-                TryWriteVersionMarker(destination, versionLabel!);
+            // the next start could not tell which release is installed. Written even when unknown
+            // (then empty): a payload that replaced the old files must not keep the old marker.
+            TryWriteVersionMarker(destination, versionLabel ?? "");
 
             r.Note(Loc.T("Fetch.Updated", copied, destination));
             r.Message = version is null

@@ -37,24 +37,36 @@ public enum GameStatus
     Unknown,
 }
 
-/// <summary>The five INI keys documented in docs/NATIVE_INI.md. Everything else in the shipped INI is a comment.</summary>
+/// <summary>The INI keys documented upstream. Everything else in the shipped INI is a comment.</summary>
 public sealed class GameProfile : Observable
 {
     private string _router = "SM86";
     private string _kernelImage = "PTX";
     private bool _hardwareBilinear;
     private bool _enabled = true;
-    private bool _optimized = true;
+    private int _optimizedTier = 1;
+    private bool? _optimized;
     private string _preset = "Auto";
-    private int _maxGeneratedFrames = 5;
+    private int _maxGeneratedFrames = 3;
     private int _logLevel = 1;
     private bool _diagnostics;
 
     /// <summary>0.3.0: frame generation on (bundled runtime) or off (the game's own DLSSG loads).</summary>
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
 
-    /// <summary>0.3.0: use the project's optimized kernels instead of the runtime's stock numerics.</summary>
-    public bool Optimized { get => _optimized; set => Set(ref _optimized, value); }
+    /// <summary>
+    /// 0.3.3: the consistency tier — how far the generated image may move from the official runtime.
+    /// 0 stock, 1 bit-identical speedups (default, recommended), 2 lossy ~50 dB (310.9 only),
+    /// 3 all lossy (fastest). Replaces the 0.3.0 boolean <see cref="Optimized"/>.
+    /// </summary>
+    public int OptimizedTier { get => _optimizedTier; set => Set(ref _optimizedTier, value); }
+
+    /// <summary>
+    /// The pre-0.3.3 boolean field, kept only so libraries written by older managers load and get
+    /// migrated by <c>LibraryStore.Normalize</c>. Never written back out (null is omitted), and not
+    /// bound anywhere.
+    /// </summary>
+    public bool? Optimized { get => _optimized; set => _optimized = value; }
 
     /// <summary>0.3.0: DLSS-G render preset. Auto lets the game or the driver profile decide.</summary>
     public string Preset { get => _preset; set => Set(ref _preset, value); }
@@ -68,7 +80,8 @@ public sealed class GameProfile : Observable
     /// <summary>0.2.x only: 0 = exact output, 1 = optional approximate sampling (SM86 only).</summary>
     public bool HardwareBilinear { get => _hardwareBilinear; set => Set(ref _hardwareBilinear, value); }
 
-    /// <summary>Capability limit 1/2/3/4/5, mapping to 2X/3X/4X/5X/6X. 0.3.0 raised the ceiling to 5.</summary>
+    /// <summary>Capability limit 1/2/3/4/5, mapping to 2X/3X/4X/5X/6X. Upstream's factory default is
+    /// 3 (4X) since 0.3.3 — users found the previous maximum too high; 6X needs the 310.9 build.</summary>
     public int MaxGeneratedFrames { get => _maxGeneratedFrames; set => Set(ref _maxGeneratedFrames, value); }
 
     /// <summary>0 = off, 1 = errors, 2 = diagnostics, 3 = verbose.</summary>
@@ -83,7 +96,7 @@ public sealed class GameProfile : Observable
         KernelImage = KernelImage,
         HardwareBilinear = HardwareBilinear,
         Enabled = Enabled,
-        Optimized = Optimized,
+        OptimizedTier = OptimizedTier,
         Preset = Preset,
         MaxGeneratedFrames = MaxGeneratedFrames,
         LogLevel = LogLevel,
@@ -96,7 +109,7 @@ public sealed class GameProfile : Observable
         KernelImage = other.KernelImage;
         HardwareBilinear = other.HardwareBilinear;
         Enabled = other.Enabled;
-        Optimized = other.Optimized;
+        OptimizedTier = other.OptimizedTier;
         Preset = other.Preset;
         MaxGeneratedFrames = other.MaxGeneratedFrames;
         LogLevel = other.LogLevel;

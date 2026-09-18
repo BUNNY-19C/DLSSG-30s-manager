@@ -128,6 +128,16 @@ public static class LibraryStore
         g.Profile.Router = NormalizeRouter(g.Profile.Router);
         g.Profile.KernelImage = NormalizeKernel(g.Profile.KernelImage);
         g.Profile.Preset = NormalizePreset(g.Profile.Preset);
+
+        // Libraries written before 0.3.3 stored Optimized as a boolean; migrate once so the tier
+        // becomes the single source of truth (true = bit-identical speedups = tier 1).
+        if (g.Profile.Optimized is bool legacy)
+        {
+            g.Profile.OptimizedTier = legacy ? 1 : 0;
+            g.Profile.Optimized = null;
+        }
+        g.Profile.OptimizedTier = Math.Clamp(g.Profile.OptimizedTier, 0, 3);
+
         g.Profile.MaxGeneratedFrames = Math.Clamp(g.Profile.MaxGeneratedFrames, 1, 5);
         g.Profile.LogLevel = Math.Clamp(g.Profile.LogLevel, 0, 3);
         if (g.Deployment is not null)
@@ -179,9 +189,9 @@ public static class IniTemplate
     /// </summary>
     private static Dictionary<string, string> Values(GameProfile p) => new(StringComparer.OrdinalIgnoreCase)
     {
-        // 0.3.0
+        // 0.3.0+ (Optimized became a 0-3 consistency tier in 0.3.3; the key name is unchanged)
         ["Enabled"] = p.Enabled ? "1" : "0",
-        ["Optimized"] = p.Optimized ? "1" : "0",
+        ["Optimized"] = Math.Clamp(p.OptimizedTier, 0, 3).ToString(),
         ["Preset"] = p.Preset,
         ["MaxGeneratedFrames"] = Math.Clamp(p.MaxGeneratedFrames, 1, 5).ToString(),
         ["Level"] = Math.Clamp(p.LogLevel, 0, 3).ToString(),

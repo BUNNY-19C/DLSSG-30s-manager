@@ -381,15 +381,21 @@ public static class Program
         var template = File.ReadAllText(Path.Combine(modRoot, "dlssg_sm86.ini"), Encoding.UTF8);
 
         // 0.3.0 schema: Enabled / Optimized / Preset replaced Router / KernelImage / HardwareBilinear.
+        // 0.3.3 turned Optimized into a 0-3 consistency tier — the INI key is the same, the value
+        // widens.
         var profile = new GameProfile
         {
-            Enabled = false, Optimized = false, Preset = "B", MaxGeneratedFrames = 2, LogLevel = 3,
+            Enabled = false, OptimizedTier = 0, Preset = "B", MaxGeneratedFrames = 2, LogLevel = 3,
             Router = "SM75", KernelImage = "Cubin", HardwareBilinear = true,
         };
         var rendered = IniTemplate.Render(template, profile);
 
         Check("Enabled 已写入", rendered.Contains("Enabled=0"), rendered);
         Check("Optimized 已写入", rendered.Contains("Optimized=0"));
+        var tier2 = IniTemplate.Render(template, new GameProfile { OptimizedTier = 2 });
+        Check("档位 2 原样写入", tier2.Contains("Optimized=2"));
+        var tierClamp = IniTemplate.Render(template, new GameProfile { OptimizedTier = 9 });
+        Check("越界档位被夹取到 3", tierClamp.Contains("Optimized=3"));
         Check("Preset 已写入", rendered.Contains("Preset=B"));
         Check("MaxGeneratedFrames 已写入", rendered.Contains("MaxGeneratedFrames=2"));
         Check("Level 已写入", rendered.Contains("Level=3"));
@@ -987,8 +993,8 @@ public static class Program
         File.Copy(Path.Combine(modRoot, "version.dll"), Path.Combine(conflictDir, "version.dll"), overwrite: true);
 
         DeploymentService.Check(conflict);
-        Check("两种代理同时存在时被判定为异常",
-            conflict.Status == GameStatus.Modified && conflict.StatusDetail.Contains("代理"),
+        Check("两种代理共存时仍为已部署并提示待机",
+            conflict.Status == GameStatus.Deployed && conflict.StatusDetail.Contains("待机"),
             conflict.StatusText + " / " + conflict.StatusDetail);
 
         var conflictRestore = DeploymentService.Restore(conflict, removeLogs: false);
@@ -1047,9 +1053,11 @@ public static class Program
         var planted = new GameEntry { Name = game.Name, RenderDir = dir, Deployment = game.Deployment };
         DeploymentService.Check(planted);
         Console.WriteLine("        状态: " + planted.StatusText + " — " + planted.StatusDetail);
-        Check("两个代理共存时状态提示异常",
-            planted.StatusDetail.Contains("代理"), planted.StatusDetail);
-        Check("状态不是正常的已部署", planted.Status != GameStatus.Deployed, planted.StatusText);
+        // Since 0.3.3 coexistence is designed behaviour (the extras forward, they do not run a
+        // second pipeline), so the status stays Deployed and merely notes the standby count.
+        Check("两个代理共存时状态提示待机",
+            planted.StatusDetail.Contains("待机"), planted.StatusDetail);
+        Check("共存不再算作故障", planted.Status == GameStatus.Deployed, planted.StatusText);
 
         game.Deployment = null;
         var third = DeploymentService.Deploy(game, source);
@@ -1695,6 +1703,21 @@ public static class Program
         Check("越界日志级别被夹取", cg?.Profile.LogLevel == 0, "实际: " + cg?.Profile.LogLevel);
         Check("非法路由被归一", cg?.Profile.Router == "SM86", cg?.Profile.Router);
         Check("非法内核镜像被归一", cg?.Profile.KernelImage == "PTX", cg?.Profile.KernelImage);
+
+        // Libraries written before 0.3.3 stored Optimized as a boolean. Loading one must migrate the
+        // value into the consistency tier (true = bit-identical speedups = 1) and never lose it.
+        File.WriteAllText(Path.Combine(work, "legacybool.json"),
+            "{\"Games\":[{\"Name\":\"a\",\"Profile\":{\"Optimized\":true}},{\"Name\":\"b\",\"Profile\":{\"Optimized\":false}}]}");
+        var legacy = LibraryStore.Load(Path.Combine(work, "legacybool.json"));
+        Check("旧布尔 true 迁移为档位 1",
+            legacy.Games.FirstOrDefault(g => g.Name == "a")?.Profile.OptimizedTier == 1);
+        Check("旧布尔 false 迁移为档位 0",
+            legacy.Games.FirstOrDefault(g => g.Name == "b")?.Profile.OptimizedTier == 0);
+
+        // Round-trip must not resurrect the legacy field.
+        LibraryStore.Save(legacy, Path.Combine(work, "legacyround.json"));
+        var saved = File.ReadAllText(Path.Combine(work, "legacyround.json"));
+        Check("迁移后不再写出旧布尔字段", !saved.Contains("\"Optimized\""));
     }
 
     /// <summary>
@@ -2115,8 +2138,10 @@ public static class Program
 
         var conflictGame = new GameEntry { Name = "GameHandConflict", RenderDir = conflictDir };
         DeploymentService.Check(conflictGame);
-        Check("手工入口与自带入口并存被判为异常",
-            conflictGame.Status == GameStatus.Modified && conflictGame.StatusDetail.Contains("代理"),
+        Check("手工入口与自带入口并存提示接管与待机",
+            conflictGame.Status == GameStatus.NotDeployed
+            && conflictGame.StatusDetail.Contains("接管")
+            && conflictGame.StatusDetail.Contains("待机"),
             conflictGame.StatusText + " / " + conflictGame.StatusDetail);
     }
 
