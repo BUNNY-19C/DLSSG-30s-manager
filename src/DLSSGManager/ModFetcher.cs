@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
@@ -458,6 +460,100 @@ public static class ModFetcher
     }
 
     /// <summary>
+    /// A byte-level progress tick for the interface: which source, which file of the payload, how
+    /// far through it, and the smoothed transfer rate. <see cref="BytesTotal"/> is -1 when the
+    /// endpoint did not declare a length, so the bar can go indeterminate.
+    /// </summary>
+    public sealed record FetchProgress(string SourceName, int FileIndex, int FileTotal,
+                                       long BytesDone, long BytesTotal, double SpeedBps);
+
+    /// <summary>
+    /// A pause switch for a running download. The fetch loops call <see cref="Wait"/> at file
+    /// boundaries: pausing takes effect once the current file finishes, which keeps an HTTP
+    /// connection from idling out on a long pause. Cancellation is separate and immediate — that is
+    /// the escape hatch when a source is too slow to finish even one file.
+    /// </summary>
+    public sealed class DownloadGate
+    {
+        private readonly ManualResetEventSlim _resume = new(initialState: true);
+        private readonly object _sync = new();
+        private volatile bool _paused;
+
+        public bool Paused
+        {
+            get { lock (_sync) return _paused; }
+        }
+
+        public void Pause()
+        {
+            lock (_sync)
+            {
+                if (_paused) return;
+                _paused = true;
+                _resume.Reset();
+            }
+        }
+
+        public void Resume()
+        {
+            lock (_sync)
+            {
+                if (!_paused) return;
+                _paused = false;
+                _resume.Set();
+            }
+        }
+
+        /// <summary>Returns immediately while running; blocks while paused; throws when cancelled.</summary>
+        public void Wait(CancellationToken ct) => _resume.Wait(ct);
+    }
+
+    /// <summary>
+    /// Tracks a transfer rate over a half-second window, smoothed so the read-loop bursts do not make
+    /// the displayed number jump.
+    /// </summary>
+    private sealed class SpeedMeter
+    {
+        private readonly Stopwatch _watch = Stopwatch.StartNew();
+        private long _lastBytes;
+        private TimeSpan _lastTime;
+        private double _bps;
+
+        public double Report(long totalBytes)
+        {
+            var now = _watch.Elapsed;
+            var dt = (now - _lastTime).TotalSeconds;
+            if (dt >= 0.5)
+            {
+                var instant = (totalBytes - _lastBytes) / dt;
+                _bps = _bps <= 0 ? instant : _bps * 0.4 + instant * 0.6;
+                _lastBytes = totalBytes;
+                _lastTime = now;
+            }
+            return _bps;
+        }
+    }
+
+    /// <summary>Formats a transfer rate for display, e.g. "12.3 MB/s".</summary>
+    public static string FormatSpeed(double bytesPerSecond)
+    {
+        if (bytesPerSecond <= 0) return "0 B/s";
+
+        string[] units = { "B/s", "KB/s", "MB/s", "GB/s" };
+        var value = bytesPerSecond;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        var text = unit == 0 ? value.ToString("F0", CultureInfo.InvariantCulture)
+                             : value.ToString("F1", CultureInfo.InvariantCulture);
+        return text + " " + units[unit];
+    }
+
+    /// <summary>
     /// Downloads the payload.
     ///
     /// With <paramref name="sourceId"/> null or <see cref="AutoSourceId"/>, each source is tried in
@@ -470,12 +566,16 @@ public static class ModFetcher
     /// payload so the interface can name the installed release. Optional: a download must not depend on
     /// the probe having succeeded.
     /// </param>
+    /// <param name="byteProgress">Per-chunk transfer progress for the interface; may be null.</param>
+    /// <param name="gate">Pause switch; may be null (never pauses).</param>
     public static async Task<OpResult> DownloadIntoAsync(
         string destination,
         IProgress<string>? progress,
         CancellationToken ct,
         string? sourceId = null,
-        string? versionLabel = null)
+        string? versionLabel = null,
+        IProgress<FetchProgress>? byteProgress = null,
+        DownloadGate? gate = null)
     {
         var sources = ActiveSources(sourceId);
         var singleSource = sources.Count == 1 && IsExplicitChoice(sourceId);
@@ -487,10 +587,12 @@ public static class ModFetcher
 
         foreach (var source in sources)
         {
+            gate?.Wait(ct);
             ct.ThrowIfCancellationRequested();
 
             for (var attempt = 1; attempt <= attemptsPerSource; attempt++)
             {
+                gate?.Wait(ct);
                 ct.ThrowIfCancellationRequested();
 
                 progress?.Report(attempt > 1 ? Loc.T("Fetch.Retrying", source.Name, attempt) : Loc.T("Fetch.Starting", source.Name));
@@ -498,7 +600,8 @@ public static class ModFetcher
                 if (attempt > 1)
                     await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
 
-                var result = await AttemptAsync(source, destination, progress, ct, versionLabel).ConfigureAwait(false);
+                var result = await AttemptAsync(source, destination, progress, ct, versionLabel, byteProgress, gate)
+                    .ConfigureAwait(false);
                 if (result.Ok) return result;
 
                 AppPaths.Log(Loc.T("Fetch.AttemptFailed", source.Name, attempt, attemptsPerSource, result.Message));
@@ -522,7 +625,9 @@ public static class ModFetcher
         string destination,
         IProgress<string>? progress,
         CancellationToken ct,
-        string? versionLabel)
+        string? versionLabel,
+        IProgress<FetchProgress>? byteProgress,
+        DownloadGate? gate)
     {
         var r = new OpResult();
         var staging = Path.Combine(Path.GetTempPath(), "dlssg_" + Guid.NewGuid().ToString("N"));
@@ -532,9 +637,9 @@ public static class ModFetcher
             Directory.CreateDirectory(destination);
 
             if (source.IsArchive)
-                await FetchArchiveAsync(source, staging, r, progress, ct).ConfigureAwait(false);
+                await FetchArchiveAsync(source, staging, r, progress, ct, byteProgress, gate).ConfigureAwait(false);
             else
-                await FetchIndividualFilesAsync(source, staging, r, progress, ct).ConfigureAwait(false);
+                await FetchIndividualFilesAsync(source, staging, r, progress, ct, byteProgress, gate).ConfigureAwait(false);
 
             // Verify before touching the destination: a mirror must not be able to write a DLL that
             // is not the project's build.
@@ -577,7 +682,8 @@ public static class ModFetcher
         return r;
     }
 
-    private static async Task FetchArchiveAsync(Source source, string staging, OpResult r, IProgress<string>? progress, CancellationToken ct)
+    private static async Task FetchArchiveAsync(Source source, string staging, OpResult r, IProgress<string>? progress,
+        CancellationToken ct, IProgress<FetchProgress>? byteProgress, DownloadGate? gate)
     {
         var archive = staging + ".zip";
         try
@@ -588,19 +694,30 @@ public static class ModFetcher
             if (response.Content.Headers.ContentLength is long declared && declared > MaxArchiveBytes)
                 throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge", declared / 1024 / 1024));
 
+            var declaredTotal = response.Content.Headers.ContentLength ?? -1;
+
             await using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
             await using (var output = File.Create(archive))
             {
                 var buffer = new byte[81920];
                 long total = 0;
                 int read;
+                var meter = new SpeedMeter();
+                var lastReport = Stopwatch.GetTimestamp();
                 while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     total += read;
                     if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge2"));
                     await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+
+                    if (byteProgress is not null && Stopwatch.GetElapsedTime(lastReport).TotalMilliseconds >= 150)
+                    {
+                        lastReport = Stopwatch.GetTimestamp();
+                        byteProgress.Report(new FetchProgress(source.Name, 1, 1, total, declaredTotal, meter.Report(total)));
+                    }
                 }
 
+                byteProgress?.Report(new FetchProgress(source.Name, 1, 1, total, declaredTotal > 0 ? declaredTotal : total, meter.Report(total)));
                 r.Note(Loc.T("Fetch.Downloaded", $"{total / 1024 / 1024.0:F1}"));
             }
 
@@ -628,7 +745,8 @@ public static class ModFetcher
         }
     }
 
-    private static async Task FetchIndividualFilesAsync(Source source, string staging, OpResult r, IProgress<string>? progress, CancellationToken ct)
+    private static async Task FetchIndividualFilesAsync(Source source, string staging, OpResult r, IProgress<string>? progress,
+        CancellationToken ct, IProgress<FetchProgress>? byteProgress, DownloadGate? gate)
     {
         using var client = CreateClient();
         Directory.CreateDirectory(staging);
@@ -638,8 +756,12 @@ public static class ModFetcher
 
         foreach (var artifact in Payload)
         {
+            // Pause takes effect between files: an HTTP connection left idle for a long pause is
+            // worse than finishing the current file first.
+            gate?.Wait(ct);
             ct.ThrowIfCancellationRequested();
-            progress?.Report(Loc.T("Fetch.Downloading", artifact.SourcePath, done + 1, Payload.Length));
+            done++;
+            progress?.Report(Loc.T("Fetch.Downloading", artifact.SourcePath, done, Payload.Length));
 
             var url = new Uri(UrlFor(source, RepoPath, RepoRef, artifact.SourcePath));
             var target = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
@@ -651,22 +773,35 @@ public static class ModFetcher
             try
             {
                 using var response = await GetCheckedAsync(client, url, ct).ConfigureAwait(false);
+                var declaredTotal = response.Content.Headers.ContentLength ?? -1;
                 await using var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
                 await using var output = File.Create(target);
 
                 var buffer = new byte[81920];
+                long fileBytes = 0;
                 int read;
+                var meter = new SpeedMeter();
+                var lastReport = Stopwatch.GetTimestamp();
                 while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     total += read;
+                    fileBytes += read;
                     if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ContentTooLarge"));
                     await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+
+                    if (byteProgress is not null && Stopwatch.GetElapsedTime(lastReport).TotalMilliseconds >= 150)
+                    {
+                        lastReport = Stopwatch.GetTimestamp();
+                        byteProgress.Report(new FetchProgress(source.Name, done, Payload.Length, fileBytes, declaredTotal, meter.Report(fileBytes)));
+                    }
                 }
 
-                done++;
+                byteProgress?.Report(new FetchProgress(source.Name, done, Payload.Length, fileBytes,
+                    declaredTotal > 0 ? declaredTotal : fileBytes, meter.Report(fileBytes)));
             }
             catch (Exception ex) when (!artifact.Required)
             {
+                done--;
                 // Optional files (readme, presets) may legitimately be absent; note and move on.
                 r.Note(Loc.T("Fetch.SkippedOptional", artifact.SourcePath, ex.Message));
             }

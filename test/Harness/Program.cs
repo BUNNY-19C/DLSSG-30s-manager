@@ -65,6 +65,7 @@ public static class Program
             TestIniRendering(modRoot);
             TestGpuProbe();
             TestVersionLabel();
+            TestDownloadProgress();
             TestLocalization();
             TestDeployRestore(modRoot, work);
             TestForeignFileProtection(modRoot, work);
@@ -573,6 +574,53 @@ public static class Program
         Check("版本号格式正确且剥离提交哈希",
             System.Text.RegularExpressions.Regex.IsMatch(AppVersion.Label, @"^v\d+\.\d+\.\d+$"),
             AppVersion.Label);
+    }
+
+    /// <summary>
+    /// The download progress panel depends on these contracts: a readable speed format and a pause
+    /// gate that blocks at file boundaries, releases on resume, and can be broken by cancel.
+    /// </summary>
+    private static void TestDownloadProgress()
+    {
+        Section("下载进度与暂停");
+
+        Check("速度格式化：零", ModFetcher.FormatSpeed(0) == "0 B/s", ModFetcher.FormatSpeed(0));
+        Check("速度格式化：字节", ModFetcher.FormatSpeed(512) == "512 B/s", ModFetcher.FormatSpeed(512));
+        Check("速度格式化：KB", ModFetcher.FormatSpeed(1536) == "1.5 KB/s", ModFetcher.FormatSpeed(1536));
+        Check("速度格式化：MB", ModFetcher.FormatSpeed(30 * 1024 * 1024) == "30.0 MB/s",
+            ModFetcher.FormatSpeed(30 * 1024 * 1024));
+
+        var gate = new ModFetcher.DownloadGate();
+        gate.Wait(CancellationToken.None);
+
+        gate.Pause();
+        Check("门：暂停后状态可见", gate.Paused);
+        gate.Resume();
+        Check("门：恢复后状态清除", !gate.Paused);
+
+        // Pause blocks a waiting worker until Resume — and cancel breaks the block, which is what
+        // lets a stuck source be abandoned mid-pause.
+        gate.Pause();
+        var blocked = Task.Run(() =>
+        {
+            try { gate.Wait(CancellationToken.None); return false; }
+            catch { return true; }
+        });
+        Thread.Sleep(200);
+        Check("门：暂停时阻塞", !blocked.IsCompleted);
+        gate.Resume();
+        Check("门：恢复后放行", blocked.Wait(2000) && !blocked.Result);
+
+        gate.Pause();
+        var cts = new CancellationTokenSource();
+        var outcome = Task.Run(() =>
+        {
+            try { gate.Wait(cts.Token); return "returned"; }
+            catch (OperationCanceledException) { return "cancelled"; }
+        });
+        Thread.Sleep(100);
+        cts.Cancel();
+        Check("门：取消能打断暂停", outcome.Wait(2000) && outcome.Result == "cancelled", outcome.Result);
     }
 
     private static void TestGpuProbe()

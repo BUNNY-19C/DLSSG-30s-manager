@@ -11,6 +11,11 @@ public partial class MainWindow : Window
     private readonly AppData _data;
     private OutputLog _log = null!;
     private CancellationTokenSource? _scanCts;
+
+    /// <summary>Cancel + pause handles for the running mod-file download, when one is in flight.</summary>
+    private CancellationTokenSource? _fetchCts;
+    private ModFetcher.DownloadGate? _fetchGate;
+
     private bool _busy;
 
     /// <summary>Keeps overlapping status refreshes from racing over the same game properties.</summary>
@@ -308,16 +313,18 @@ public partial class MainWindow : Window
         _log.Write(Loc.T("Fetch.AutoStart", target));
 
         _busy = true;
-        var progress = UiProgress();
 
         OpResult result;
         try
         {
-            var detected = await ModFetcher.DetectLatestVersionAsync(CancellationToken.None);
-            if (detected is not null) progress.Report(Loc.T("Fetch.AutoDetected", detected));
-
-            result = await ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None,
-                                                        versionLabel: detected);
+            result = await RunModFetchAsync(target, ModFetcher.AutoSourceId);
+        }
+        catch (OperationCanceledException)
+        {
+            _busy = false;
+            BatchStatusText.Text = "";
+            _log.Write(Loc.T("Fetch.Cancelled"));
+            return;
         }
         catch (Exception ex)
         {
@@ -572,16 +579,17 @@ public partial class MainWindow : Window
         _busy = true;
         _log.Write(Loc.T("Fetch.StartLog"));
 
-        var progress = UiProgress();
-
         OpResult result;
         try
         {
-            // Same probe as the first run, so an update also names the release it fetched.
-            var detected = await ModFetcher.DetectLatestVersionAsync(CancellationToken.None);
-            if (detected is not null) progress.Report(Loc.T("Fetch.AutoDetected", detected));
-
-            result = await ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None, sourceId, detected);
+            result = await RunModFetchAsync(target, sourceId);
+        }
+        catch (OperationCanceledException)
+        {
+            _busy = false;
+            BatchStatusText.Text = "";
+            _log.Write(Loc.T("Fetch.Cancelled"));
+            return;
         }
         catch (Exception ex)
         {
@@ -608,6 +616,85 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
+
+    /// <summary>
+    /// Shared fetch runner for the toolbar button and the first-run fetch: probe, then download with
+    /// the progress panel visible. The panel carries a byte-level progress bar, the transfer speed,
+    /// a pause switch (effective at file boundaries) and cancel — cancel is what makes switching
+    /// sources easy: nothing is written to the mod folder until verification passes, so an aborted
+    /// download leaves the previous payload intact and the user can immediately pick another source.
+    /// </summary>
+    private async Task<OpResult> RunModFetchAsync(string target, string sourceId)
+    {
+        _fetchCts = new CancellationTokenSource();
+        _fetchGate = new ModFetcher.DownloadGate();
+        var ct = _fetchCts.Token;
+
+        FetchPauseButton.Content = Loc.T("Fetch.Pause");
+        FetchProgressBar.Value = 0;
+        FetchProgressBar.IsIndeterminate = false;
+        FetchProgressSpeed.Text = "";
+        FetchProgressPanel.Visibility = Visibility.Visible;
+
+        var textProgress = UiProgress();
+        var byteProgress = new Progress<ModFetcher.FetchProgress>(UpdateFetchProgress);
+
+        try
+        {
+            var detected = await ModFetcher.DetectLatestVersionAsync(ct);
+            if (detected is not null) textProgress.Report(Loc.T("Fetch.AutoDetected", detected));
+
+            return await ModFetcher.DownloadIntoAsync(target, textProgress, ct, sourceId, detected,
+                                                      byteProgress, _fetchGate);
+        }
+        finally
+        {
+            FetchProgressPanel.Visibility = Visibility.Collapsed;
+            _fetchCts.Dispose();
+            _fetchCts = null;
+            _fetchGate = null;
+        }
+    }
+
+    /// <summary>Applies one byte-progress tick. Runs on the UI thread (Progress&lt;T&gt; posts).</summary>
+    private void UpdateFetchProgress(ModFetcher.FetchProgress p)
+    {
+        FetchProgressText.Text = p.FileTotal <= 1
+            ? Loc.T("Fetch.ProgressArchive", p.SourceName)
+            : Loc.T("Fetch.ProgressFiles", p.SourceName, p.FileIndex, p.FileTotal);
+
+        if (p.BytesTotal > 0)
+        {
+            FetchProgressBar.IsIndeterminate = false;
+            FetchProgressBar.Value = Math.Clamp(p.BytesDone * 100.0 / p.BytesTotal, 0, 100);
+        }
+        else
+        {
+            // No Content-Length from this endpoint: the bar cannot show a fraction.
+            FetchProgressBar.IsIndeterminate = true;
+        }
+
+        FetchProgressSpeed.Text = ModFetcher.FormatSpeed(p.SpeedBps);
+    }
+
+    private void FetchPause_Click(object sender, RoutedEventArgs e)
+    {
+        var gate = _fetchGate;
+        if (gate is null) return;
+
+        if (gate.Paused)
+        {
+            gate.Resume();
+            FetchPauseButton.Content = Loc.T("Fetch.Pause");
+        }
+        else
+        {
+            gate.Pause();
+            FetchPauseButton.Content = Loc.T("Fetch.Resume");
+        }
+    }
+
+    private void FetchCancel_Click(object sender, RoutedEventArgs e) => _fetchCts?.Cancel();
 
     // ---- game list ----------------------------------------------------------
 

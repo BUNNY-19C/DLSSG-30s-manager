@@ -249,6 +249,28 @@
             <Setter Property="Foreground" Value="{DynamicResource DangerText}" />
         </Style>
 
+        <!-- 下载进度条：默认模板是 Windows 绿细线，与主题无关；这里换成圆角轨道 + 主色指示条。
+             PART_Track / PART_Indicator 是 ProgressBar 自动计算宽度所需的固定部件名。 -->
+        <Style TargetType="ProgressBar">
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                            <Border x:Name="PART_Track">
+                                <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryBackground}"
+                                        CornerRadius="6" HorizontalAlignment="Left" MinWidth="6" />
+                            </Border>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!--
             滚动条：默认模板是白色宽条带两端箭头，在深色界面上非常突兀。
             这里换成 10px 细条、圆角拇指、无箭头；颜色走主题键，浅色主题同样成立。
@@ -345,6 +367,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -742,8 +765,37 @@
             </Border>
         </Grid>
 
+        <!-- ═══════════ 下载进度条（仅下载时可见）：源 · 文件 · 进度 · 速度 · 暂停 · 取消 ═══════════ -->
+        <Border Grid.Row="3" x:Name="FetchProgressPanel" Visibility="Collapsed"
+                Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource LineBrush}"
+                BorderThickness="0,1,0,0" Padding="16,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" MinWidth="220" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="FetchProgressText" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis"
+                           Margin="0,0,12,0" />
+                <ProgressBar x:Name="FetchProgressBar" Grid.Column="1" Minimum="0" Maximum="100"
+                             VerticalAlignment="Center" Margin="0,0,12,0" />
+                <TextBlock x:Name="FetchProgressSpeed" Grid.Column="2" VerticalAlignment="Center"
+                           FontSize="12" FontFamily="Cascadia Mono, Consolas, monospace"
+                           Foreground="{DynamicResource TextMuted}" Margin="0,0,12,0" />
+                <Button x:Name="FetchPauseButton" Grid.Column="3" Content="{loc:Tr Fetch.Pause}"
+                        Style="{StaticResource ToolButton}" Padding="10,4" FontSize="12"
+                        Margin="0,0,6,0" Click="FetchPause_Click" ToolTip="{loc:Tr Fetch.PauseTip}" />
+                <Button Grid.Column="4" Content="{loc:Tr Fetch.Cancel}"
+                        Style="{StaticResource DangerButton}" Padding="10,4" FontSize="12" Margin="0"
+                        Click="FetchCancel_Click" ToolTip="{loc:Tr Fetch.CancelTip}" />
+            </Grid>
+        </Border>
+
         <!-- ═══════════ 日志条 ═══════════ -->
-        <Border Grid.Row="3" Background="{DynamicResource LogBackground}"
+        <Border Grid.Row="4" Background="{DynamicResource LogBackground}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.RowDefinitions>
