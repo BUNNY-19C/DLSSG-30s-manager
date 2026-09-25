@@ -143,6 +143,7 @@ public static partial class Strings
         ["Deploy.Starting"] = "— Deploying {0}",
         ["Deploy.Success"] = "Deployed: {0}",
         ["Deploy.RemoveRedundant"] = "Removed surplus proxy entry {0} (only one is allowed)",
+        ["Deploy.StandbyKept"] = "Kept standby proxy {0} (coexistence is normal since 0.3.3; restore cleans it up too)",
         ["Deploy.Done"] = "Deployed {0} + {1} → {2}",
         ["Deploy.Settings"] = "  route {0} / {1} / up to {2}X / approximate sampling {3} / log {4}",
         ["Deploy.On"] = "on",

@@ -13,10 +13,11 @@
 给 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) 做的图形化管理器：按游戏部署 mod、一键恢复，不用手工往游戏目录里拷 DLL。mod 本身是个 DLL 代理——把代理 DLL 和 `dlssg_sm86.ini` 放到游戏渲染 EXE 旁边，RTX 30 系（SM86）就能用上 DLSS 帧生成。
 
 > [!IMPORTANT]
-> **两个游戏特有事项**
+> **游戏特有事项**
 >
 > - **怪物猎人荒野**必须先装前置 [REFramework](https://github.com/praydog/REFramework)：下载它的 `MHWILDS.zip`，把 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll`、`reframework\` 解压到游戏根目录。不装前置，装上 mod 后游戏必崩（实测）。
 > - **绝区零**要在「代理入口」里选 `d3d12.dll`——`version.dll` 这类名字会被它的反作弊改名隔离。这个 DLL 管理器会自己下载。
+> - **异环**（Neverness to Everness）：游戏目录是 `Client\WindowsNoEditor\HT\Binaries\Win64`，且不自带 DLSS-G 负载。帧生成需要三个文件放在同一目录：`d3d12.dll`、`dinput8.dll`、`dlssg_sm86.ini`（两个代理都要，缺一不可）。v1.9.2 起管理器能扫描识别这个结构，「接管手工安装」即可纳入管理；重新部署会保留全部代理并记录在案，不会再收敛成一个。
 
 ## 下载
 

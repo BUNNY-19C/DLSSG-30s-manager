@@ -13,10 +13,11 @@
 A graphical manager for [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86): deploy the mod per game and restore with one click, instead of copying DLLs into game folders by hand. The mod is a DLL proxy — put the proxy DLL and `dlssg_sm86.ini` beside the game's rendering executable and RTX 30 series (SM86) cards get DLSS frame generation.
 
 > [!IMPORTANT]
-> **Two game-specific prerequisites**
+> **Game-specific prerequisites**
 >
 > - **Monster Hunter Wilds** needs the [REFramework](https://github.com/praydog/REFramework) prerequisite first: download its `MHWILDS.zip` and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` into the game root. Without it, deploying this mod crashes the game every time (measured).
 > - **Zenless Zone Zero** needs the `d3d12.dll` entry — names like `version.dll` get renamed away by its anti-cheat. The manager downloads that DLL for you.
+> - **Neverness to Everness**: the game folder is `Client\WindowsNoEditor\HT\Binaries\Win64` and the game ships no DLSS-G payload. Frame generation needs three files side by side: `d3d12.dll`, `dinput8.dll` and `dlssg_sm86.ini` (both proxies are used — the set is not redundant). v1.9.2+ scans recognise this structure; adopt the hand install, and redeploying keeps every proxy recorded instead of trimming to one.
 
 ## Download
 

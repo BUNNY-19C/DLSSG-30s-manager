@@ -143,6 +143,7 @@ public static partial class Strings
         ["Deploy.Starting"] = "— 部署 {0}",
         ["Deploy.Success"] = "部署完成：{0}",
         ["Deploy.RemoveRedundant"] = "移除多余的代理入口 {0}（本项目只允许保留一个）",
+        ["Deploy.StandbyKept"] = "保留待机代理 {0}（0.3.3+ 共存属正常，恢复时会一并清理）",
         ["Deploy.Done"] = "已部署 {0} + {1} → {2}",
         ["Deploy.Settings"] = "  路由 {0} / {1} / 最大 {2}X / 近似采样 {3} / 日志 {4}",
         ["Deploy.On"] = "开",

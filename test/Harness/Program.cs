@@ -1110,15 +1110,16 @@ public static class Program
         game.Deployment = null;
         var third = DeploymentService.Deploy(game, source);
         Check("再次部署成功", third.Ok, third.Message);
-        Check("多余的代理被清除", !File.Exists(Path.Combine(dir, stray)), stray);
-
-        ours = ModSource.ProxyCandidates
-            .Where(n => File.Exists(Path.Combine(dir, n)) && DeploymentService.IsProjectSigned(Path.Combine(dir, n)))
-            .ToList();
-        Check("清理后仍只有一个代理", ours.Count == 1, string.Join("、", ours));
+        // Since 0.3.3 the standby mechanism makes coexistence safe (and some games only respond to
+        // one specific entry name), so a modern payload keeps the stray instead of deleting it —
+        // recorded with the deployment, which is what restore relies on to clean it up.
+        Check("多余代理按待机保留", File.Exists(Path.Combine(dir, stray)), stray);
+        Check("多余代理已记录在案",
+            game.Deployment?.Files.Any(f => string.Equals(f.FileName, stray, StringComparison.OrdinalIgnoreCase)) == true);
 
         var restore = DeploymentService.Restore(game, removeLogs: false);
         Check("恢复成功", restore.Ok, restore.Message);
+        Check("恢复时多余代理也被清理", !File.Exists(Path.Combine(dir, stray)), stray);
 
         // No proxy of ours may survive. The INI is a different matter: if a deploy displaced a
         // pre-existing file, restore correctly brings that file back, so its presence is expected
@@ -1205,11 +1206,14 @@ public static class Program
             game2.PreferredProxy = "version.dll";
             var switched = DeploymentService.Deploy(game2, source);
             Check("换名部署成功", switched.Ok, switched.Message);
-            Check("旧自定义入口被清理", !File.Exists(proxyPath));
+            // Modern payload: the old entry stays as a standby forwarder, recorded for restore.
+            Check("旧自定义入口按待机保留", File.Exists(proxyPath));
+            Check("旧自定义入口已记录在案",
+                game2.Deployment?.Files.Any(f => string.Equals(f.FileName, customName, StringComparison.OrdinalIgnoreCase)) == true);
             Check("新入口已写入", File.Exists(Path.Combine(dir, "version.dll")));
 
             DeploymentService.Restore(game2, removeLogs: false);
-            Check("收尾恢复干净", !File.Exists(Path.Combine(dir, "version.dll")));
+            Check("收尾恢复干净", !File.Exists(Path.Combine(dir, "version.dll")) && !File.Exists(proxyPath));
         }
         finally
         {

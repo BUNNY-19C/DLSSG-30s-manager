@@ -455,6 +455,25 @@ public static class DeploymentService
 
         try
         {
+            // Extra proxies of ours in the folder: on 0.2.x payloads two live pipelines crash, so
+            // they are trimmed. On 0.3.3+ the loader runs them as standby forwarders by design (the
+            // game loads whichever name it recognises first), and some games only respond to one
+            // specific entry name — so there they stay, recorded with the deployment so a later
+            // restore still removes every file we are responsible for.
+            if (source.IsLegacySchema)
+            {
+                foreach (var (name, path) in redundantProxies)
+                {
+                    r.Note(Loc.T("Deploy.RemoveRedundant", name));
+                    File.Delete(path);
+                }
+            }
+            else if (redundantProxies.Count > 0)
+            {
+                foreach (var (name, _) in redundantProxies)
+                    r.Note(Loc.T("Deploy.StandbyKept", name));
+            }
+
             // Displace anything that is not ours, keeping a copy so restore can put it back.
             //
             // Ownership is decided by content, not only by the recorded hash: the INI we generate is
@@ -464,12 +483,6 @@ public static class DeploymentService
             if (File.Exists(iniDest) && !LooksLikeProjectIni(iniDest) && !IsOurs(iniDest, prev?.IniSha256))
             {
                 backups.Add(Backup(iniDest, restoreFolder, r));
-            }
-
-            foreach (var (name, path) in redundantProxies)
-            {
-                r.Note(Loc.T("Deploy.RemoveRedundant", name));
-                File.Delete(path);
             }
 
             tmp = proxyDest + ".dlssgtmp";
@@ -506,14 +519,29 @@ public static class DeploymentService
                 // this deploy wrote into, or the previous one's when nothing new was displaced.
                 RestoreFolder = backups.Count > 0 ? restoreFolder : prev?.RestoreFolder ?? "",
                 Backups = carried,
-                // Both files this deployment wrote. Kept so the entry-name scan can recognise a proxy the
-                // user added themselves, which no signature vouches for.
+                // Every file this deployment is responsible for: the proxy and INI it wrote, plus —
+                // on 0.3.3+ payloads — the standby proxies left in place instead of removed. The
+                // record is what lets the entry-name scan and restore recognise files that carry no
+                // signature this project can vouch for.
                 Files = new List<DeployedFile>
                 {
                     new() { FileName = proxy, Sha256 = proxyHash, Size = new FileInfo(proxyDest).Length },
                     new() { FileName = ModSource.IniName, Sha256 = iniHash, Size = new FileInfo(iniDest).Length },
                 },
             };
+
+            if (!source.IsLegacySchema)
+            {
+                foreach (var (name, path) in redundantProxies)
+                {
+                    game.Deployment!.Files.Add(new DeployedFile
+                    {
+                        FileName = name,
+                        Sha256 = Sha256(path),
+                        Size = new FileInfo(path).Length,
+                    });
+                }
+            }
 
             r.Note(Loc.T("Deploy.Done", proxy, ModSource.IniName, game.RenderDir));
 
