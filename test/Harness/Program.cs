@@ -1282,6 +1282,26 @@ public static class Program
         File.WriteAllBytes(Path.Combine(empty, "game.exe"), RandomNumberGenerator.GetBytes(512));
         Check("无标记目录不产生候选", Detection.ScanFolder(empty).Count == 0);
 
+        // A hand-installed 0.3.x mod works on games that never shipped DLSS-G (Neverness to
+        // Everness: Client\WindowsNoEditor\HT\Binaries\Win64). The project INI alone must be
+        // enough of a marker to find the install and resolve the render directory to it.
+        var ueRoot = Path.Combine(work, "UeLibrary", "Neverness To Everness", "Client", "WindowsNoEditor", "HT", "Binaries", "Win64");
+        Directory.CreateDirectory(ueRoot);
+        File.WriteAllBytes(Path.Combine(ueRoot, "HTGame.exe"), RandomNumberGenerator.GetBytes(8192));
+        File.WriteAllText(Path.Combine(ueRoot, ModSource.IniName), "[General]\r\nEnabled=1\r\n");
+
+        var ueHit = Detection.FindRenderTarget(Path.Combine(work, "UeLibrary"));
+        Check("手装 Mod（无 nvngx）：定位到渲染目录", ueHit is not null &&
+            string.Equals(Path.GetFullPath(ueHit.RenderDir), Path.GetFullPath(ueRoot), StringComparison.OrdinalIgnoreCase),
+            ueHit?.RenderDir);
+        Check("手装 Mod：选中 HTGame.exe", ueHit?.ExePath.EndsWith("HTGame.exe") == true, ueHit?.ExePath);
+        Check("手装 Mod：名称取自项目文件夹", ueHit?.Name == "HT", ueHit?.Name);
+
+        var ueScan = Detection.ScanFolder(Path.Combine(work, "UeLibrary"));
+        Check("手装 Mod：文件夹扫描可发现", ueScan.Count == 1 &&
+            string.Equals(ueScan[0].RenderDir, ueHit?.RenderDir, StringComparison.OrdinalIgnoreCase),
+            "数量: " + ueScan.Count);
+
         var steamLibs = Detection.SteamLibraries().ToList();
         Console.WriteLine("      检测到 Steam 库: " + (steamLibs.Count == 0 ? "(无)" : string.Join(" | ", steamLibs)));
         Check("Steam 库枚举未抛异常", true);

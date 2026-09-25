@@ -13,12 +13,24 @@ public sealed class GameCandidate
 }
 
 /// <summary>
-/// Finds games by looking for the NVIDIA DLSS-G payload (nvngx_dlssg.dll) that a game must ship to
-/// expose frame generation at all; the folder holding it is where the proxy belongs.
+/// Finds games by two markers: the NVIDIA DLSS-G payload (<c>nvngx_dlssg.dll</c>) a game ships when
+/// it supports frame generation natively, and this project's own <c>dlssg_sm86.ini</c> — since 0.3.x
+/// the mod carries its own DLSS-G runtime, so it works on games that never shipped the payload, and
+/// a hand-installed copy is as good a signpost as the game's own files.
 /// </summary>
 public static class Detection
 {
     public const string DlssgMarker = "nvngx_dlssg.dll";
+
+    /// <summary>
+    /// This project's INI name, unique enough that no other product uses it: a folder holding it is
+    /// a hand-installed mod, and it is where the proxy belongs.
+    /// </summary>
+    public const string ModIniMarker = "dlssg_sm86.ini";
+
+    /// <summary>Every file name that marks a frame-generation folder.</summary>
+    public static readonly string[] Markers = { DlssgMarker, ModIniMarker };
+
     private const int MaxDepth = 6;
 
     private static readonly string[] ExeNoise =
@@ -136,10 +148,13 @@ public static class Detection
     {
         if (depth > MaxDepth) yield break;
 
-        IEnumerable<string> files;
-        try { files = Directory.EnumerateFiles(dir, DlssgMarker); }
-        catch { files = Array.Empty<string>(); }
-        foreach (var f in files) yield return f;
+        foreach (var marker in Markers)
+        {
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(dir, marker); }
+            catch { files = Array.Empty<string>(); }
+            foreach (var f in files) yield return f;
+        }
 
         IEnumerable<string> subdirs;
         try { subdirs = Directory.EnumerateDirectories(dir); }
@@ -221,6 +236,7 @@ public static class Detection
     {
         "win64", "win32", "binaries", "binary", "bin", "x64", "x86", "game", "games",
         "retail", "shipping", "main", "sl", "client", "app", "content", "build",
+        "windowsnoeditor", "windowseditor",
     };
 
     public static string FriendlyName(string directory)
