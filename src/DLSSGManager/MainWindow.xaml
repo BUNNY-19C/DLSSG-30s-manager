@@ -368,7 +368,6 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- ═══════════ 顶栏：品牌 + 全局控件 ═══════════ -->
@@ -413,23 +412,30 @@
         <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Padding="16,10">
             <StackPanel>
-                <StackPanel Orientation="Horizontal">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <TextBlock Text="{loc:Tr Toolbar.ModSource}" Style="{StaticResource FieldLabel}" />
-                    <TextBlock x:Name="ModSourceText" VerticalAlignment="Center" FontSize="12"
-                               TextTrimming="CharacterEllipsis" MaxWidth="700" />
-                    <Border x:Name="ModSourceBadge" CornerRadius="4" Padding="7,2" Margin="8,0,0,0"
+                    <TextBlock x:Name="ModSourceText" Grid.Column="1" VerticalAlignment="Center" FontSize="12"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                    <Border x:Name="ModSourceBadge" Grid.Column="2" CornerRadius="4" Padding="7,2" Margin="8,0,0,0"
                             Background="{DynamicResource BadgeOkBackground}" VerticalAlignment="Center">
                         <TextBlock x:Name="ModSourceBadgeText" FontSize="11"
                                    Foreground="{DynamicResource BadgeOkText}" />
                     </Border>
-                </StackPanel>
-                <!-- 显卡型号与入口按钮固定一行；第二行只显示紧凑摘要，完整建议在悬停提示与启动日志里 -->
+                    <Button x:Name="UpdateModButton" Grid.Column="3" Content="{loc:Tr Toolbar.UpdateMod}"
+                            Style="{StaticResource ToolButton}" Padding="10,5" FontSize="12" Margin="10,0,0,0"
+                            Click="UpdateMod_Click" ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
+                </Grid>
+                <!-- 显卡信息常驻；修改名称入口收在工具区。 -->
                 <StackPanel Margin="0,6,0,0">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="{loc:Tr Toolbar.Gpu}" Style="{StaticResource FieldLabel}" />
                         <TextBlock x:Name="GpuText" VerticalAlignment="Center" FontSize="12" />
-                        <Button Content="{loc:Tr Toolbar.GpuName}" Style="{StaticResource ToolButton}"
-                                Padding="10,3.5" FontSize="12" Margin="12,0,0,0" Click="GpuName_Click" />
                     </StackPanel>
                     <TextBlock x:Name="RouterHintText" Foreground="{DynamicResource TextMuted}"
                                FontSize="11.5" Margin="0,3,0,0" VerticalAlignment="Center"
@@ -441,14 +447,28 @@
                             Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="ScanSteam_Click" />
                     <Button Content="{loc:Tr Toolbar.ScanFolder}" Style="{StaticResource ToolButton}"
                             Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="ScanFolder_Click" />
-                    <Button Content="{loc:Tr Toolbar.AddProxy}" Style="{StaticResource ToolButton}"
+                    <Button x:Name="ToolsButton" Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="ToggleTools_Click"
+                            ToolTip="{loc:Tr Toolbar.ToolsTip}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ToolButton}">
+                                <Setter Property="Content" Value="{loc:Tr Toolbar.ShowTools}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Visibility, ElementName=ToolsPanel}" Value="Visible">
+                                        <Setter Property="Content" Value="{loc:Tr Toolbar.HideTools}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </WrapPanel>
+                <WrapPanel x:Name="ToolsPanel" Visibility="Collapsed" Margin="0,2,-6,0">
+                    <Button x:Name="AddProxyButton" Content="{loc:Tr Toolbar.AddProxy}" Style="{StaticResource ToolButton}"
                             Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="AddProxy_Click" ToolTip="{loc:Tr Toolbar.AddProxyTip}" />
-                    <Button Content="{loc:Tr Toolbar.UpdateMod}" Style="{StaticResource ToolButton}"
-                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="UpdateMod_Click"
-                            ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
+                    <Button x:Name="GpuNameButton" Content="{loc:Tr Toolbar.GpuName}" Style="{StaticResource ToolButton}"
+                            Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="GpuName_Click" />
                     <Button x:Name="AdminButton" Content="{loc:Tr Toolbar.RestartAdmin}" Style="{StaticResource ToolButton}"
                             Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="AdminButton_Click" />
-                    <Button Content="{loc:Tr Toolbar.OpenDataDir}" Style="{StaticResource ToolButton}"
+                    <Button x:Name="OpenDataDirButton" Content="{loc:Tr Toolbar.OpenDataDir}" Style="{StaticResource ToolButton}"
                             Padding="10,5" FontSize="12" Margin="0,0,6,6" Click="OpenDataDir_Click" />
                 </WrapPanel>
             </StackPanel>
@@ -471,16 +491,40 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="14,12,12,10">
-                        <TextBlock Text="{loc:Tr List.Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="{loc:Tr List.Add}" Style="{StaticResource ToolButton}" Padding="9,4"
-                                    FontSize="12" Margin="0,0,6,0" Click="AddGame_Click"
-                                    ToolTip="{loc:Tr List.AddTip}" />
-                            <Button Content="{loc:Tr List.Remove}" Style="{StaticResource ToolButton}" Padding="9,4"
-                                    FontSize="12" Margin="0" Click="RemoveGame_Click" />
-                        </StackPanel>
-                    </Grid>
+                    <StackPanel Grid.Row="0" Margin="14,12,12,10">
+                        <Grid>
+                            <TextBlock Text="{loc:Tr List.Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="{loc:Tr List.Add}" Style="{StaticResource ToolButton}" Padding="9,4"
+                                        FontSize="12" Margin="0,0,6,0" Click="AddGame_Click"
+                                        ToolTip="{loc:Tr List.AddTip}" />
+                                <Button Content="{loc:Tr List.Remove}" Style="{StaticResource ToolButton}" Padding="9,4"
+                                        FontSize="12" Margin="0" Click="RemoveGame_Click" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="{loc:Tr List.Search}" Foreground="{DynamicResource TextMuted}"
+                                   FontSize="12" Margin="0,10,0,4" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="GameSearchBox" TextChanged="GameSearch_TextChanged"
+                                     AutomationProperties.Name="{loc:Tr List.Search}" />
+                            <Button Grid.Column="1" Content="{loc:Tr Action.Clear}" Style="{StaticResource ToolButton}"
+                                    Margin="6,0,0,0" Padding="8,4" Click="ClearGameSearch_Click" />
+                        </Grid>
+                        <TextBlock Text="{loc:Tr List.FilterStatus}" Foreground="{DynamicResource TextMuted}"
+                                   FontSize="12" Margin="0,8,0,4" />
+                        <ComboBox x:Name="GameStatusFilter" SelectedIndex="0"
+                                  AutomationProperties.Name="{loc:Tr List.FilterStatus}"
+                                  ToolTip="{loc:Tr List.FilterStatusTip}"
+                                  SelectionChanged="GameStatusFilter_SelectionChanged">
+                            <ComboBoxItem Tag="all" Content="{loc:Tr List.FilterAll}" />
+                            <ComboBoxItem Tag="deployed" Content="{loc:Tr List.FilterDeployed}" />
+                            <ComboBoxItem Tag="attention" Content="{loc:Tr List.FilterAttention}" />
+                        </ComboBox>
+                    </StackPanel>
 
                     <ListBox x:Name="GameList" Grid.Row="1" Background="Transparent" BorderThickness="0"
                              Margin="8,0,8,6" SelectionChanged="GameList_SelectionChanged"
@@ -536,14 +580,33 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
+                    <TextBlock x:Name="GameListEmptyText" Grid.Row="1" Margin="20,12,20,0"
+                               VerticalAlignment="Top" TextWrapping="Wrap" IsHitTestVisible="False"
+                               Foreground="{DynamicResource TextMuted}" FontSize="12">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Setter Property="Text" Value="{loc:Tr List.NoMatches}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasItems, ElementName=GameList}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ItemsSource.SourceCollection.Count, ElementName=GameList}" Value="0">
+                                        <Setter Property="Text" Value="{loc:Tr List.LibraryEmpty}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
                     <!-- 批量操作：低频，收在边栏底部 -->
                     <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                             Padding="12,9">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="{loc:Tr Action.DeployAll}" Style="{StaticResource ToolButton}"
-                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="DeployAll_Click" />
+                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="DeployAll_Click" ToolTip="{loc:Tr List.BatchScope}" />
                             <Button Content="{loc:Tr Action.RestoreAll}" Style="{StaticResource DangerButton}"
-                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="RestoreAll_Click" />
+                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="RestoreAll_Click" ToolTip="{loc:Tr List.BatchScope}" />
                             <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}"
                                     Padding="10,5" FontSize="12" Margin="0" Click="RefreshAll_Click" />
                         </StackPanel>
@@ -553,7 +616,7 @@
 
             <!-- 详情区 -->
             <Border Grid.Column="1" Background="{DynamicResource WindowBackground}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,14,16,14">
+                <ScrollViewer x:Name="DetailScrollViewer" VerticalScrollBarVisibility="Auto" Padding="16,14,16,14">
                     <StackPanel>
                         <TextBlock x:Name="NoSelectionText" Text="{loc:Tr List.Empty}"
                                    Foreground="{DynamicResource TextMuted}" Margin="0,24,0,0" />
@@ -567,6 +630,39 @@
                                                Foreground="{DynamicResource WarnBannerTitle}" TextWrapping="Wrap" />
                                     <TextBlock Text="{Binding AntiCheatBody}" Foreground="{DynamicResource WarnBannerBody}"
                                                FontSize="11.5" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 先展示当前游戏、状态和操作，再展示可编辑配置。 -->
+                            <Border x:Name="StatusCard" Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="StatusTitle" FontWeight="SemiBold"
+                                               TextWrapping="Wrap" Margin="0,6,0,0" />
+                                    <TextBlock x:Name="StatusBody" Foreground="{DynamicResource TextMuted}"
+                                               FontSize="12" TextWrapping="Wrap" Margin="0,3,0,12" />
+
+                                    <WrapPanel>
+                                        <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
+                                                Margin="0,0,6,8" Click="Deploy_Click" />
+                                        <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
+                                                Margin="0,0,6,8" Click="Restore_Click" />
+                                        <Button x:Name="AdoptButton" Content="{loc:Tr Action.Adopt}" Style="{StaticResource ToolButton}"
+                                                Margin="0,0,6,8" Click="Adopt_Click" />
+                                    </WrapPanel>
+                                    <WrapPanel>
+                                        <Button Content="{loc:Tr Action.Check}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Margin="0,0,6,6" Click="Check_Click" />
+                                        <Button Content="{loc:Tr Action.OpenDir}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Margin="0,0,6,6" Click="OpenRenderDir_Click" />
+                                        <Button Content="{loc:Tr Action.Launch}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Margin="0,0,6,6" Click="Launch_Click" />
+                                        <Button x:Name="OpenLogButton" Content="{loc:Tr Action.ViewLog}" Style="{StaticResource ToolButton}"
+                                                Padding="11,5" FontSize="12" Margin="0,0,6,6" Click="OpenModLog_Click" />
+                                    </WrapPanel>
+                                    <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
+                                              IsChecked="False" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
 
@@ -611,23 +707,6 @@
                                                 Padding="10,5" Margin="8,0,0,0" Click="BrowseExe_Click" />
                                     </Grid>
 
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="88" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{loc:Tr Detail.ProxyEntry}" Style="{StaticResource FieldLabel}" />
-                                        <!-- Items are built in code: the list is the source's available entry
-                                             names, which grows when the user adds a proxy DLL. Tag carries the
-                                             stable value the code compares against; Content is the localised
-                                             label. Binding SelectedValue to Content would break as soon as the
-                                             UI language changed. -->
-                                        <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Tag"
-                                                  SelectionChanged="ProxyCombo_SelectionChanged" />
-                                    </Grid>
-
-                                    <TextBlock Text="{loc:Tr Detail.ProxyNote}"
-                                               Foreground="{DynamicResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="88,4,0,0" />
                                 </StackPanel>
                             </Border>
 
@@ -644,14 +723,15 @@
                                         与其留三个点了没反应的控件，不如按 schema 隐藏。
                                     -->
                                     <StackPanel x:Name="ModernSettings">
-                                        <CheckBox Content="{loc:Tr Detail.Enabled}"
-                                                  IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8" />
+                                        <CheckBox IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8">
+                                            <TextBlock Text="{loc:Tr Detail.Enabled}" TextWrapping="Wrap" />
+                                        </CheckBox>
                                         <!-- 0.3.3: Optimized is a 0-3 consistency tier, not a boolean. The
                                              items are built in code (BuildLocalizedCombos) because their
                                              labels are translated and must follow the interface language. -->
                                         <Grid Margin="0,0,0,8">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="120" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{loc:Tr Detail.OptimizedTier}" Style="{StaticResource FieldLabel}" />
@@ -660,35 +740,15 @@
                                                       SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
                                                       ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
                                         </Grid>
-                                        <Grid Margin="0,0,0,8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="88" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
-                                            <ComboBox Grid.Column="1" SelectedValuePath="Content"
-                                                      SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
-                                                      ToolTip="{loc:Tr Detail.PresetTip}">
-                                                <ComboBoxItem Content="Auto" />
-                                                <ComboBoxItem Content="A" />
-                                                <ComboBoxItem Content="B" />
-                                            </ComboBox>
-                                        </Grid>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="120" />
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="88" />
-                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
-                                            <ComboBox x:Name="FrameCombo" Grid.Column="1" Margin="0,0,14,0"
+                                            <ComboBox x:Name="FrameCombo" Grid.Column="1"
                                                       DisplayMemberPath="Text" SelectedValuePath="Value"
                                                       SelectedValue="{Binding Profile.MaxGeneratedFrames, Mode=TwoWay}" />
-                                            <TextBlock Grid.Column="2" Text="{loc:Tr Detail.LogLevel}" Style="{StaticResource FieldLabel}" />
-                                            <ComboBox x:Name="LogCombo" Grid.Column="3" Width="150"
-                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
-                                                      SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
                                         </Grid>
                                     </StackPanel>
 
@@ -719,90 +779,103 @@
                                         <CheckBox Content="{loc:Tr Detail.Diagnostics}"
                                                   IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="0,0,0,4" />
                                     </StackPanel>
-                                </StackPanel>
-                            </Border>
 
-                            <!-- 卡片：操作 -->
-                            <Border Style="{StaticResource SectionCard}">
-                                <StackPanel>
-                                    <TextBlock Text="{loc:Tr Detail.GroupActions}" Style="{StaticResource SectionTitle}" />
-
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                        <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
-                                                Click="Deploy_Click" />
-                                        <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
-                                                Click="Restore_Click" />
-                                        <Button x:Name="AdoptButton" Content="{loc:Tr Action.Adopt}" Style="{StaticResource ToolButton}"
-                                                Click="Adopt_Click" />
+                                    <Button x:Name="AdvancedSettingsButton" HorizontalAlignment="Left"
+                                            Margin="0,12,0,0" Click="ToggleAdvancedSettings_Click">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource ToolButton}">
+                                                <Setter Property="Content" Value="{loc:Tr Detail.ShowAdvanced}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Visibility, ElementName=AdvancedSettings}" Value="Visible">
+                                                        <Setter Property="Content" Value="{loc:Tr Detail.HideAdvanced}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <StackPanel x:Name="AdvancedSettings" Visibility="Collapsed" Margin="0,12,0,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{loc:Tr Detail.ProxyEntry}" Style="{StaticResource FieldLabel}" />
+                                            <!-- Tag keeps the stored entry name independent of UI language. -->
+                                            <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Tag"
+                                                      SelectionChanged="ProxyCombo_SelectionChanged" />
+                                        </Grid>
+                                        <TextBlock Text="{loc:Tr Detail.ProxyNote}" Foreground="{DynamicResource TextMuted}"
+                                                   FontSize="12" TextWrapping="Wrap" Margin="120,4,0,8" />
+                                        <StackPanel x:Name="ModernAdvancedSettings" Visibility="{Binding Visibility, ElementName=ModernSettings}">
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="120" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="PresetCombo" Grid.Column="1" SelectedValuePath="Content"
+                                                          SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
+                                                          ToolTip="{loc:Tr Detail.PresetTip}">
+                                                    <ComboBoxItem Content="Auto" />
+                                                    <ComboBoxItem Content="A" />
+                                                    <ComboBoxItem Content="B" />
+                                                </ComboBox>
+                                            </Grid>
+                                        </StackPanel>
+                                        <!-- Level 键在 0.2.x 与 0.3.x 模板里都存在，所以不做 schema 门控。 -->
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{loc:Tr Detail.LogLevel}" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox x:Name="LogCombo" Grid.Column="1"
+                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
+                                        </Grid>
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                        <Button Content="{loc:Tr Action.Check}" Style="{StaticResource ToolButton}"
-                                                Padding="11,5" FontSize="12" Click="Check_Click" />
-                                        <Button Content="{loc:Tr Action.OpenDir}" Style="{StaticResource ToolButton}"
-                                                Padding="11,5" FontSize="12" Click="OpenRenderDir_Click" />
-                                        <Button Content="{loc:Tr Action.Launch}" Style="{StaticResource ToolButton}"
-                                                Padding="11,5" FontSize="12" Click="Launch_Click" />
-                                        <Button x:Name="OpenLogButton" Content="{loc:Tr Action.ViewLog}" Style="{StaticResource ToolButton}"
-                                                Padding="11,5" FontSize="12" Click="OpenModLog_Click" Margin="0" />
-                                    </StackPanel>
-                                    <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
-                                              IsChecked="False" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="14,11"
-                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                    x:Name="StatusCard">
-                                <StackPanel>
-                                    <TextBlock x:Name="StatusTitle" FontWeight="SemiBold" />
-                                    <TextBlock x:Name="StatusBody" Foreground="{DynamicResource TextMuted}"
-                                               FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0" />
-                                </StackPanel>
-                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
         </Grid>
 
-        <!-- ═══════════ 下载进度条（仅下载时可见）：源 · 文件 · 进度 · 速度 · 暂停 · 取消 ═══════════ -->
-        <Border Grid.Row="3" x:Name="FetchProgressPanel" Visibility="Collapsed"
-                Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource LineBrush}"
-                BorderThickness="0,1,0,0" Padding="16,8">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" MinWidth="220" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock x:Name="FetchProgressText" VerticalAlignment="Center" FontSize="12"
-                           Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis"
-                           Margin="0,0,12,0" />
-                <ProgressBar x:Name="FetchProgressBar" Grid.Column="1" Minimum="0" Maximum="100"
-                             VerticalAlignment="Center" Margin="0,0,12,0" />
-                <TextBlock x:Name="FetchProgressSpeed" Grid.Column="2" VerticalAlignment="Center"
-                           FontSize="12" FontFamily="Cascadia Mono, Consolas, monospace"
-                           Foreground="{DynamicResource TextMuted}" Margin="0,0,12,0" />
-                <Button x:Name="FetchPauseButton" Grid.Column="3" Content="{loc:Tr Fetch.Pause}"
-                        Style="{StaticResource ToolButton}" Padding="10,4" FontSize="12"
-                        Margin="0,0,6,0" Click="FetchPause_Click" ToolTip="{loc:Tr Fetch.PauseTip}" />
-                <Button Grid.Column="4" Content="{loc:Tr Fetch.Cancel}"
-                        Style="{StaticResource DangerButton}" Padding="10,4" FontSize="12" Margin="0"
-                        Click="FetchCancel_Click" ToolTip="{loc:Tr Fetch.CancelTip}" />
-            </Grid>
-        </Border>
-
         <!-- ═══════════ 日志条 ═══════════ -->
-        <Border Grid.Row="4" Background="{DynamicResource LogBackground}"
+        <Border Grid.Row="3" Background="{DynamicResource LogBackground}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="96" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="14,8,14,4">
+                <!-- 下载进行中：这一行整体替换为进度条（高度不变，界面不跳动） -->
+                <Grid Grid.Row="0" x:Name="FetchProgressPanel" Visibility="Collapsed" Margin="14,8,14,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="220" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="FetchProgressText" VerticalAlignment="Center" FontSize="12"
+                               Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis"
+                               Margin="0,0,12,0" />
+                    <ProgressBar x:Name="FetchProgressBar" Grid.Column="1" Minimum="0" Maximum="100"
+                                 VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <TextBlock x:Name="FetchProgressSpeed" Grid.Column="2" VerticalAlignment="Center"
+                               FontSize="12" FontFamily="Cascadia Mono, Consolas, monospace"
+                               Foreground="{DynamicResource TextMuted}" Margin="0,0,12,0" />
+                    <Button x:Name="FetchPauseButton" Grid.Column="3" Content="{loc:Tr Fetch.Pause}"
+                            Style="{StaticResource ToolButton}" Padding="10,4" FontSize="12"
+                            Margin="0,0,6,0" Click="FetchPause_Click" ToolTip="{loc:Tr Fetch.PauseTip}" />
+                    <Button Grid.Column="4" Content="{loc:Tr Fetch.Cancel}"
+                            Style="{StaticResource DangerButton}" Padding="10,4" FontSize="12" Margin="0"
+                            Click="FetchCancel_Click" ToolTip="{loc:Tr Fetch.CancelTip}" />
+                </Grid>
+                <Grid Grid.Row="0" x:Name="LogHeader" Margin="14,8,14,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -810,13 +883,55 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{loc:Tr Action.Output}" FontWeight="SemiBold" FontSize="12"
                                Foreground="{DynamicResource TextLogTitle}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="LastLogText" Grid.Column="1" VerticalAlignment="Center"
+                               Margin="12,0,12,0" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                               Foreground="{DynamicResource TextOnLog}" FontSize="12">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=BatchStatusText}" Value="">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                     <TextBlock x:Name="BatchStatusText" Grid.Column="1" VerticalAlignment="Center"
-                               Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource TextMuted}" FontSize="12" />
-                    <Button Grid.Column="2" Content="{loc:Tr Action.Clear}" Padding="10,3" FontSize="11"
-                            Style="{StaticResource ToolButton}" Margin="0" Click="ClearLog_Click" />
+                               Margin="12,0,12,0" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                               Foreground="{DynamicResource TextOnLog}" FontSize="12">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <Trigger Property="Text" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button x:Name="ToggleLogButton" Padding="10,4" FontSize="12"
+                                Margin="0,0,6,0" Click="ToggleLog_Click">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ToolButton}">
+                                    <Setter Property="Content" Value="{loc:Tr Action.ShowLog}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Visibility, ElementName=OutputBox}" Value="Visible">
+                                            <Setter Property="Content" Value="{loc:Tr Action.HideLog}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="{loc:Tr Action.Clear}" Padding="10,4" FontSize="12"
+                                Style="{StaticResource ToolButton}" Margin="0" Click="ClearLog_Click" />
+                    </StackPanel>
                 </Grid>
                 <TextBox x:Name="OutputBox" Grid.Row="1" Margin="12,0,12,10" IsReadOnly="True"
+                         Height="96" Visibility="Collapsed"
                          Background="{DynamicResource LogBackground}" BorderThickness="0" Foreground="{DynamicResource TextOnLog}"
                          FontFamily="Cascadia Mono, Consolas, monospace" FontSize="11.5"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"

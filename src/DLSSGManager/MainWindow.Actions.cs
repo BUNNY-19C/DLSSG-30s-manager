@@ -419,7 +419,7 @@ public partial class MainWindow
         _log.Write(Loc.T("Scan.Done", found.Count, added));
 
         // Land on something useful instead of leaving the detail pane empty after a scan.
-        if (GameList.SelectedItem is null && _data.Games.Count > 0)
+        if (GameList.SelectedItem is null && GameList.Items.Count > 0)
             GameList.SelectedIndex = 0;
 
         var games = touched;
@@ -548,6 +548,25 @@ public partial class MainWindow
     }
 
     private void ClearLog_Click(object sender, RoutedEventArgs e) => _log.Clear();
+
+    private void ToggleLog_Click(object sender, RoutedEventArgs e)
+    {
+        OutputBox.Visibility = OutputBox.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+        if (OutputBox.Visibility == Visibility.Visible) OutputBox.ScrollToEnd();
+    }
+
+    private void ToggleAdvancedSettings_Click(object sender, RoutedEventArgs e)
+    {
+        AdvancedSettings.Visibility = AdvancedSettings.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ToggleTools_Click(object sender, RoutedEventArgs e)
+    {
+        ToolsPanel.Visibility = ToolsPanel.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     private void AdminButton_Click(object sender, RoutedEventArgs e)
     {

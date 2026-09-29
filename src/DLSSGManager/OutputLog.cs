@@ -14,11 +14,13 @@ namespace DLSSGManager;
 public sealed class OutputLog
 {
     private readonly TextBox _box;
+    private readonly TextBlock _summary;
     private readonly Dispatcher _dispatcher;
 
-    public OutputLog(TextBox box)
+    public OutputLog(TextBox box, TextBlock summary)
     {
         _box = box;
+        _summary = summary;
         _dispatcher = box.Dispatcher;
     }
 
@@ -36,12 +38,22 @@ public sealed class OutputLog
         _box.AppendText(text);
         _box.AppendText(Environment.NewLine);
         _box.ScrollToEnd();
+        // Keep a single readable message visible even when the full output is collapsed.
+        var lastLine = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault(line => !string.IsNullOrWhiteSpace(line));
+        if (lastLine is not null) _summary.Text = lastLine.Trim();
     }
 
     public void Clear()
     {
-        if (_dispatcher.CheckAccess()) _box.Clear();
-        else _dispatcher.BeginInvoke(() => _box.Clear());
+        if (_dispatcher.CheckAccess()) ClearOutput();
+        else _dispatcher.BeginInvoke(ClearOutput);
+    }
+
+    private void ClearOutput()
+    {
+        _box.Clear();
+        _summary.Text = "";
     }
 
     /// <summary>Reports the outcome of an operation, prefixing a tick or cross.</summary>

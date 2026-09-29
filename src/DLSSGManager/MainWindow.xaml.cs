@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using Microsoft.Win32;
 
 namespace DLSSGManager;
@@ -10,6 +11,7 @@ public partial class MainWindow : Window
 {
     private readonly AppData _data;
     private OutputLog _log = null!;
+    private ListCollectionView? _gamesView;
     private CancellationTokenSource? _scanCts;
 
     /// <summary>Cancel + pause handles for the running mod-file download, when one is in flight.</summary>
@@ -58,7 +60,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         AppPaths.EnsureCreated();
-        _log = new OutputLog(OutputBox);
+        _log = new OutputLog(OutputBox, LastLogText);
 
         VersionText.Text = AppVersion.Label;
         Title = Loc.T("App.Name") + "  " + AppVersion.Label;
@@ -68,8 +70,15 @@ public partial class MainWindow : Window
         BuildThemeCombo();
         BuildProxyCombo();
 
-        // Bound straight to the persisted collection: no copy can drift out of sync with the file.
-        GameList.ItemsSource = _data.Games;
+        // Filter the view, never the persisted collection or the batch-operation targets.
+        _gamesView = new ListCollectionView(_data.Games)
+        {
+            Filter = MatchesGameFilters,
+        };
+        _gamesView.LiveFilteringProperties.Add(nameof(GameEntry.Name));
+        _gamesView.LiveFilteringProperties.Add(nameof(GameEntry.Status));
+        _gamesView.IsLiveFiltering = true;
+        GameList.ItemsSource = _gamesView;
         if (_data.Games.Count > 0) GameList.SelectedIndex = 0;
 
         Loaded += OnLoaded;
@@ -634,7 +643,9 @@ public partial class MainWindow : Window
         FetchProgressBar.Value = 0;
         FetchProgressBar.IsIndeterminate = false;
         FetchProgressSpeed.Text = "";
+        // 进度行替换日志标题行：日志条高度不变，正文不跳动。
         FetchProgressPanel.Visibility = Visibility.Visible;
+        LogHeader.Visibility = Visibility.Collapsed;
 
         var textProgress = UiProgress();
         var byteProgress = new Progress<ModFetcher.FetchProgress>(UpdateFetchProgress);
@@ -650,6 +661,7 @@ public partial class MainWindow : Window
         finally
         {
             FetchProgressPanel.Visibility = Visibility.Collapsed;
+            LogHeader.Visibility = Visibility.Visible;
             _fetchCts.Dispose();
             _fetchCts = null;
             _fetchGate = null;
@@ -698,6 +710,38 @@ public partial class MainWindow : Window
 
     // ---- game list ----------------------------------------------------------
 
+    private bool MatchesGameFilters(object item)
+    {
+        if (item is not GameEntry game ||
+            !game.Name.Contains(GameSearchBox.Text.Trim(), StringComparison.OrdinalIgnoreCase)) return false;
+
+        return ((GameStatusFilter.SelectedItem as ComboBoxItem)?.Tag as string) switch
+        {
+            "deployed" => game.Status == GameStatus.Deployed,
+            "attention" => game.Status is GameStatus.Modified or GameStatus.Missing or GameStatus.Unknown,
+            _ => true,
+        };
+    }
+
+    private void GameSearch_TextChanged(object sender, TextChangedEventArgs e) => RefreshGameFilters();
+
+    private void GameStatusFilter_SelectionChanged(object sender, SelectionChangedEventArgs e) => RefreshGameFilters();
+
+    private void RefreshGameFilters()
+    {
+        if (_gamesView is null) return;
+        var selected = Selected;
+        _gamesView.Refresh();
+        if (selected is not null && _gamesView.Contains(selected)) GameList.SelectedItem = selected;
+        else GameList.SelectedIndex = GameList.Items.Count > 0 ? 0 : -1;
+    }
+
+    private void ClearGameSearch_Click(object sender, RoutedEventArgs e)
+    {
+        GameSearchBox.Clear();
+        GameSearchBox.Focus();
+    }
+
     private void GameList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var game = Selected;
@@ -708,6 +752,7 @@ public partial class MainWindow : Window
         DataContext = game;
         ProxyCombo.SelectedValue = game.PreferredProxy;
         UpdateStatusCard();
+        DetailScrollViewer.ScrollToTop();
     }
 
     private void ProxyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -774,6 +819,8 @@ public partial class MainWindow : Window
             Profile = new GameProfile { Router = _data.RecommendedRouter },
         };
 
+        GameSearchBox.Clear();
+        GameStatusFilter.SelectedIndex = 0;
         _data.Games.Add(game);
         GameList.SelectedItem = game;
         _log.Write(Loc.T("List.AddedMessage", folder));
@@ -796,7 +843,7 @@ public partial class MainWindow : Window
 
         _data.Games.Remove(game);
         LibraryStore.Save(_data);
-        GameList.SelectedIndex = _data.Games.Count > 0 ? 0 : -1;
+        GameList.SelectedIndex = GameList.Items.Count > 0 ? 0 : -1;
     }
 
     // ---- status -------------------------------------------------------------

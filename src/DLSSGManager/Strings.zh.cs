@@ -34,6 +34,9 @@ public static partial class Strings
         ["Toolbar.RestartAdmin"] = "以管理员身份重启",
         ["Toolbar.AlreadyAdmin"] = "已是管理员",
         ["Toolbar.OpenDataDir"] = "打开数据目录",
+        ["Toolbar.ShowTools"] = "展开工具",
+        ["Toolbar.HideTools"] = "收起工具",
+        ["Toolbar.ToolsTip"] = "代理 DLL 导入、显卡名称、管理员重启和数据目录",
         ["Toolbar.ModReady"] = "可用 · {0}",
         ["Toolbar.ModNotReady"] = "未就绪 · 请先获取 Mod 文件",
         ["Toolbar.ModIncomplete"] = "文件不完整",
@@ -54,7 +57,7 @@ public static partial class Strings
         ["GpuName.ControlChar"] = "名称里不能包含控制字符。",
         ["GpuName.Trim"] = "名称首尾不能有空白。",
         ["GpuName.WriteFailed"] = "写入失败：{0}",
-        ["GpuName.AdminHint"] = "修改需要管理员权限：点右上角「以管理员身份重启」，或右键 exe 选「以管理员身份运行」。",
+        ["GpuName.AdminHint"] = "修改需要管理员权限：展开顶部工具区，点「以管理员身份重启」，或右键 exe 选「以管理员身份运行」。",
         ["GpuName.Changed"] = "已把显卡显示名称改为「{0}」。重启游戏/应用后生效。",
         ["GpuName.Restored"] = "已把显卡显示名称还原为「{0}」。重启游戏/应用后生效。",
         ["GpuName.NoRealName"] = "读不到硬件的真实名称，请在输入框里手动填写。",
@@ -65,6 +68,15 @@ public static partial class Strings
 
         // ── 游戏列表 ─────────────────────────────────────────────────
         ["List.Title"] = "游戏列表",
+        ["List.Search"] = "搜索游戏名称",
+        ["List.NoMatches"] = "没有匹配的游戏。请修改搜索，或将状态筛选切回“全部”。",
+        ["List.LibraryEmpty"] = "尚未添加游戏。点击上方“添加游戏”，或扫描游戏目录。",
+        ["List.BatchScope"] = "操作整个游戏库，包含被搜索或状态筛选隐藏的游戏。",
+        ["List.FilterStatus"] = "筛选游戏状态",
+        ["List.FilterAll"] = "全部",
+        ["List.FilterDeployed"] = "已部署",
+        ["List.FilterAttention"] = "需处理",
+        ["List.FilterStatusTip"] = "已部署：文件检查正常。需处理：文件已变更、缺失，或尚未完成检查。未部署不属于异常。",
         ["List.Add"] = "添加游戏…",
         ["List.AddTip"] = "选择游戏文件夹，添加时自动检测反作弊",
         ["List.Remove"] = "移除",
@@ -88,6 +100,8 @@ public static partial class Strings
         ["Detail.ProxyEntry"] = "代理入口",
         ["Detail.ProxyNote"] = "说明：代理入口必须放在渲染 EXE 旁。若某名称已被其他 Mod 占用，换一个入口即可；本管理器每个游戏只装一个代理。",
         ["Detail.GroupFg"] = "插帧配置（写入 dlssg_sm86.ini）",
+        ["Detail.ShowAdvanced"] = "展开高级设置",
+        ["Detail.HideAdvanced"] = "收起高级设置",
         ["Detail.Enabled"] = "启用帧生成（Enabled=0 时改用游戏自带的 DLSS-G，Ampere 上不会有效果）",
         ["Detail.OptimizedTier"] = "一致性档位",
         ["Detail.OptimizedTierTip"] = "允许生成的画面偏离官方运行库多远：数字越大越快、离官方画面越远。0 和 1 都逐位一致；2/3 有损，且需要 310.9 构建（310.1 上自动退回 1）。",
@@ -138,6 +152,8 @@ public static partial class Strings
         ["Action.RefreshAll"] = "刷新全部状态",
         ["Action.Clear"] = "清空",
         ["Action.Output"] = "运行输出",
+        ["Action.ShowLog"] = "展开日志",
+        ["Action.HideLog"] = "收起日志",
 
         // ── 部署 ─────────────────────────────────────────────────────
         ["Deploy.Starting"] = "— 部署 {0}",
@@ -234,7 +250,7 @@ public static partial class Strings
         ["Status.Summary"] = "入口 {0} · Mod {1} · 部署于 {2}",
         ["Status.SummaryBackups"] = " · 已备份 {0} 个原文件",
         ["Status.RefreshFailed"] = "刷新状态失败：{0}",
-        ["Status.NoPermissionHint"] = "提示：游戏若装在 Program Files 下，写入需要管理员权限，可用右上角按钮重启。",
+        ["Status.NoPermissionHint"] = "提示：游戏若装在 Program Files 下，写入需要管理员权限，可展开顶部工具区，以管理员身份重启。",
         ["Status.DataDir"] = "数据目录：{0}",
 
         // ── 扫描与探测 ───────────────────────────────────────────────
