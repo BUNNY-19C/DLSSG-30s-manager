@@ -4,6 +4,8 @@
 
 先说清楚一件事：**本项目的代码、文案和文档由 AI 生成**，维护者负责真机实测与发布。这也是为什么测试写得比代码还多——AI 产出需要能自动验证的护栏。提 PR 时请以"能不能通过全量测试、结论有没有实测支撑"为准，而不是以文风或结构是否顺手为准。
 
+**接手开发先读 [docs/HANDOVER.md](docs/HANDOVER.md)**：代码地图、关键决策的来龙去脉（为什么必须 DynamicResource、为什么不能用 ContinueWith、代理共存语义在 0.3.3 前后有何不同）、上游更新时的核对清单，以及一批踩过的坑。
+
 ## 环境
 
 - .NET 8 SDK
@@ -40,10 +42,10 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj \
 安装包用 [Inno Setup 6](https://jrsoftware.org/isdl.php) 编译（`installer/languages/` 下的简体中文语言文件随仓库提供，Inno 安装包未内置）：
 
 ```powershell
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.7.3 installer\setup.iss
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.9.3 installer\setup.iss
 ```
 
-产物在 `dist/`。推 `v*` 标签（例如 `git tag v1.7.3 && git push origin v1.7.3`）会由 GitHub Actions 自动完成构建、测试、打包并创建 Release，附两个 exe 与 `SHA256SUMS.txt`。
+产物在 `dist/`。推 `v*` 标签（例如 `git tag v1.9.3 && git push origin v1.9.3`）会由 GitHub Actions 自动完成构建、测试、打包并创建 Release，附两个 exe 与 `SHA256SUMS.txt`。
 
 ## 改动前的建议
 
