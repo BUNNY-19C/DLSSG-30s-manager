@@ -18,7 +18,7 @@
 #define AppName "DLSSG 30 系管理器"
 #define AppShortName "DLSSGManager"
 #define AppPublisher "BUNNY-19C"
-#define AppUrl "https://github.com/BUNNY-19C/DLSS-30-"
+#define AppUrl "https://github.com/BUNNY-19C/DLSSG-30s-manager"
 
 ; 版本号由构建命令传入，未传时用占位值。
 #ifndef AppVersion

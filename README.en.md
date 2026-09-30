@@ -28,8 +28,10 @@ The mod files (about 101 MB) are not bundled and setup does not download them ei
 ## Using it
 
 1. “Scan Steam library” or “Add game…”. Games are found by the `nvngx_dlssg.dll` they ship, and the folder is scanned for anti-cheat at the same time.
-2. Select a game and click “Deploy to this game”.
-3. Click “Restore” to undo. Batch actions live at the bottom of the window.
+2. Select a game and adjust its configuration. “Save configuration” saves in the manager; “Deploy to this game / Apply to game” writes the game files. The status card distinguishes unsaved, pending and applied settings.
+3. Click “Restore” to undo. For batch actions, check games first. Only visible checked games are processed; per-game results support retrying failed items.
+
+Search games by name or filter by status. Proxy entries, presets and log level are under advanced settings; tools and output can be collapsed. Compatibility guidance checks known directories and prerequisites for Wilds, Zenless Zone Zero and NTE.
 
 > [!WARNING]
 > **Games with kernel-level anti-cheat carry account risk.** The anti-cheat may block or quarantine the proxy DLL, and a recorded detection may put your account at risk. The manager detects it and warns; whether to deploy is your decision.
@@ -38,6 +40,8 @@ The mod files (about 101 MB) are not bundled and setup does not download them ei
 
 - **Entry names**: `version.dll` by default, plus `winmm`, `dinput8`, `dbghelp`, `dxgi` and `d3d12`. If another mod occupies a name, the manager picks a different one.
 - **Settings** are stored per game (frame generation, consistency tier 0-3, render preset, multiplier ceiling, log level) and written into `dlssg_sm86.ini` on deploy.
+- **Builds**: choose 310.9 (up to 6X) or 310.1 (up to 4X, tiers 0/1 and Auto preset). Download the build from the top bar, then select it for the game. Unsupported settings are explained and block deployment without silently changing your choices.
+- **Updates** download local files only. The status card shows local and deployed versions separately; “Select updates” prepares games for batch application. Failed record saves offer a retry. Closing during an operation waits for completion; downloads can be cancelled before exiting.
 - **Restore** only deletes files whose signature and hash both check out; displaced originals are backed up to `%APPDATA%\DLSSGManager\restore\` first.
 - **Hand-installed copies** can be adopted, including a community `d3d12.dll` dropped in by hand (recognised by its hash).
 - **GPU**: for RTX 30 series (validated by the author on a 3080 Ti). 40/50 series support frame generation natively and do not need this. VRAM grows with output resolution, about +700–770 MiB at 4K.

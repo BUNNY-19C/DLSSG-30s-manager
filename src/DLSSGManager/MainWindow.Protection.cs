@@ -44,6 +44,7 @@ public partial class MainWindow
     /// </summary>
     private async Task EvaluateAttachedFolderAsync(GameEntry game)
     {
+        _pendingChecks++;
         try
         {
             var check = await Task.Run(() => DeploymentService.Evaluate(game));
@@ -54,9 +55,10 @@ public partial class MainWindow
             AppPaths.Log("附加目录后状态检查失败: " + ex);
         }
 
-        LibraryStore.Save(_data);
+        SaveLibrary();
         UpdateStatusCard();
-        WarnIfProtected(game);
+        if (!_closeWhenIdle) WarnIfProtected(game);
+        _pendingChecks--;
     }
 
     /// <summary>

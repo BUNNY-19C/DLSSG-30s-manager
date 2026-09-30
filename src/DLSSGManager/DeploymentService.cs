@@ -373,7 +373,6 @@ public static class DeploymentService
     public static OpResult Deploy(GameEntry game, ModSource source, bool allowProtected = false)
     {
         var r = new OpResult();
-
         if (!source.IsValid)
         {
             // The common case for a fresh clone is that the mod files were never fetched, so say that
@@ -383,6 +382,13 @@ public static class DeploymentService
                 : Loc.T("Deploy.SourceMissingHint");
 
             r.Fail(Loc.T("Deploy.SourceUnavailable", source.ValidationMessage, hint));
+            return r;
+        }
+
+        var configurationError = BuildCatalog.ConfigurationError(game.Profile);
+        if (configurationError is not null || source.RuntimeModel != BuildCatalog.Normalize(game.Profile.RuntimeModel))
+        {
+            r.Fail(configurationError ?? Loc.T("Manage.BuildMismatch"));
             return r;
         }
 
@@ -453,6 +459,13 @@ public static class DeploymentService
             .Where(x => File.Exists(x.Path) && IsOurProxyAt(game.RenderDir, x.Name, prev))
             .ToList();
 
+        if (prev is not null && prev.RuntimeModel != source.RuntimeModel && !source.IsLegacySchema &&
+            redundantProxies.Any(p => !File.Exists(source.DllPath(p.Name))))
+        {
+            r.Fail(Loc.T("Manage.StandbyMismatch"));
+            return r;
+        }
+
         try
         {
             // Extra proxies of ours in the folder: on 0.2.x payloads two live pipelines crash, so
@@ -470,8 +483,18 @@ public static class DeploymentService
             }
             else if (redundantProxies.Count > 0)
             {
-                foreach (var (name, _) in redundantProxies)
+                foreach (var (name, path) in redundantProxies)
+                {
+                    // The first entry loaded may be a standby: update its bytes too.
+                    if (File.Exists(source.DllPath(name)))
+                    {
+                        tmp = path + ".dlssgtmp";
+                        File.Copy(source.DllPath(name), tmp, overwrite: true);
+                        File.Move(tmp, path, overwrite: true);
+                        Unblock(path);
+                    }
                     r.Note(Loc.T("Deploy.StandbyKept", name));
+                }
             }
 
             // Displace anything that is not ours, keeping a copy so restore can put it back.
@@ -510,6 +533,8 @@ public static class DeploymentService
 
             game.Deployment = new DeploymentInfo
             {
+                RuntimeModel = source.RuntimeModel,
+                AppliedConfiguration = ConfigurationState.Applied(game),
                 ProxyName = proxy,
                 ModVersion = source.Version,
                 DeployedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),

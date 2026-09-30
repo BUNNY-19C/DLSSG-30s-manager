@@ -89,6 +89,7 @@ public static class LibraryStore
                 var data = System.Text.Json.JsonSerializer.Deserialize<AppData>(json, JsonOptions);
                 if (data is not null)
                 {
+                    data.DownloadBuild = BuildCatalog.Normalize(data.DownloadBuild);
                     foreach (var g in data.Games) Normalize(g);
                     return data;
                 }
@@ -102,8 +103,11 @@ public static class LibraryStore
         return new AppData();
     }
 
-    public static void Save(AppData data, string? path = null)
+    public static string Serialize(AppData data) => System.Text.Json.JsonSerializer.Serialize(data, JsonOptions);
+
+    public static OpResult Save(AppData data, string? path = null)
     {
+        var result = new OpResult();
         var file = path ?? AppPaths.LibraryFile;
         try
         {
@@ -111,7 +115,7 @@ public static class LibraryStore
             var dir = Path.GetDirectoryName(file);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            var json = System.Text.Json.JsonSerializer.Serialize(data, JsonOptions);
+            var json = Serialize(data);
             var tmp = file + ".tmp";
             File.WriteAllText(tmp, json, new UTF8Encoding(false));
             File.Move(tmp, file, overwrite: true);
@@ -119,12 +123,15 @@ public static class LibraryStore
         catch (Exception ex)
         {
             AppPaths.Log("保存库文件失败: " + ex.Message);
+            result.Fail(ex.Message);
         }
+        return result;
     }
 
     private static void Normalize(GameEntry g)
     {
         g.Profile = g.Profile ?? new GameProfile();
+        g.Profile.RuntimeModel = BuildCatalog.Normalize(g.Profile.RuntimeModel);
         g.Profile.Router = NormalizeRouter(g.Profile.Router);
         g.Profile.KernelImage = NormalizeKernel(g.Profile.KernelImage);
         g.Profile.Preset = NormalizePreset(g.Profile.Preset);

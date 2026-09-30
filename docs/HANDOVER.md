@@ -2,8 +2,9 @@
 
 面向接手本项目的人（或未来的自己）。README 讲"怎么用"，这里讲"为什么这么做、改的时候会踩到什么"。
 
-- 当前版本：**v1.9.3**（v1.9.x 线：界面重做 + 下载进度 + 游戏适配）
-- 测试：**449 项全绿**（`dotnet run --project test/Harness -- --self-test`）
+- 当前版本：**v1.10.0**（配置保存与应用、构建选择、批量管理和界面改进）
+- 改进范围：见 [UI 落地清单](UI-IMPROVEMENTS.md)。
+- 测试：**480 项全绿**（`dotnet run --project test/Harness -- --self-test`）
 - 仓库：`github.com/BUNNY-19C/DLSSG-30s-manager`，打 tag 即发版
 
 ---
@@ -27,7 +28,7 @@
 # 构建（需要 .NET 8 SDK）
 dotnet build src/DLSSGManager/DLSSGManager.csproj -c Debug
 
-# 全量测试（449 项，含本地化/主题/URL 策略/部署全链路）
+# 全量测试（含配置状态、构建隔离、保存失败、本地化/主题/部署全链路）
 dotnet run --project test/Harness -c Debug -- --self-test
 
 # 只测下载链路（会真实联网下载到 mod/，约 210 MB）
@@ -203,13 +204,12 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 
 按价值排序：
 
-1. **上游 310.1 构建变体未支持**：仓库里有 `310.1/` 目录（4X 保守版，与根目录的 310.9 是两套内嵌运行时）。管理器只分发根目录版本。要支持得加"构建选择"（Payload 表加一组目标 + 界面开关）。
+1. **310.1 构建变体现已支持（当前工作区）**：DLL 下载路径加 `310.1/`，INI 仍取上游根目录；本地使用 `mod/variants/310.1` 与默认根构建分开。`ManagementState.cs` 定义构建限制与配置快照，`MainWindow.Management.cs` 负责保存状态与关闭流程，`MainWindow.Batch.cs` 负责显式勾选、逐项结果与失败重试。旧记录没有应用快照时显示待应用，不臆测其配置。
 2. **安全审计缺失**：Mimosa 扫描在 v1.8.4 之后多次不可用，那几次提交没有扫描结论。工具恢复后值得补跑一次深度扫描。
 3. **构造审查的 Optional 项**（未做，风险低）：
    - `ZipFile.ExtractToDirectory` 不限制解压总量（恶意镜像可炸磁盘；签名校验仍在写盘前，属可用性问题）
    - `ModFetcher.Verify` 是 private，镜像拒绝/官方放行的分支只能靠真实下载触发（可下沉为 internal + 假 staging 测试）
-   - `LibraryStore.Save` 失败只写日志，调用方按成功继续
-   - 下载/部署中途关窗口：进程退出会丢弃续作（记录不落盘）——可加 `Closing` 确认
+   - 保存失败与关闭保护已落地：Save 返回结果；UI 保留内存记录和重试提示，批量保存失败停止后续项；Closing 等待操作完成或取消下载后退出。此流程不覆盖强制结束进程或断电。
 4. **反作弊规则表**与 GPU 设备 ID 区间是经验数据，遇到误判按实际游戏样本增补。
 
 ---

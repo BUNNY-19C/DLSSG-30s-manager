@@ -79,6 +79,7 @@ public static class Program
             TestPathGuard(work);
             TestAntiCheat(modRoot, work);
             TestPersistence(work);
+            TestManagement(work);
             TestUrlPolicy();
             TestCommunityBuildRecognition(work);
             TestHandInstalledExtra(modRoot, work);
@@ -1705,6 +1706,90 @@ public static class Program
         Directory.CreateDirectory(plain);
         Check("空目录不误报", !AntiCheat.Scan(plain).IsProtected);
         Check("不存在的目录标记为扫描失败", AntiCheat.Scan(Path.Combine(work, "nope")).ScanFailed);
+    }
+
+    private static void TestManagement(string work)
+    {
+        Section("配置状态、构建选择与保存失败");
+        var data = new AppData();
+        var game = new GameEntry { Name = "配置验证", RenderDir = MakeGameDir(work, "Management") };
+        data.Games.Add(game);
+        Check("未部署配置需要应用", ConfigurationState.NeedsApply(game));
+        game.Deployment = new DeploymentInfo { AppliedConfiguration = ConfigurationState.Applied(game) };
+        Check("已应用配置与快照一致", !ConfigurationState.NeedsApply(game));
+        game.Profile.LogLevel = 2;
+        Check("修改配置后需要重新应用", ConfigurationState.NeedsApply(game));
+        var saved = ConfigurationState.Saved(game);
+        game.Name = "重命名";
+        Check("名称修改计入未保存状态", saved != ConfigurationState.Saved(game));
+        game.Deployment.AppliedConfiguration = ConfigurationState.Applied(game);
+        game.BatchSelected = true;
+        Check("批量勾选不影响配置快照", !ConfigurationState.NeedsApply(game));
+        var file = Path.Combine(work, "management.json");
+        Check("保存明确返回成功", LibraryStore.Save(data, file).Ok);
+        var loaded = LibraryStore.Load(file).Games.Single();
+        Check("保存加载保留应用快照", !ConfigurationState.NeedsApply(loaded));
+        Check("批量选择不持久化", !loaded.BatchSelected);
+        var before = File.ReadAllText(file);
+        using (var locked = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            game.Name = "写入失败的修改";
+            var failed = LibraryStore.Save(data, file);
+            Check("保存被锁文件返回失败原因", !failed.Ok && failed.Message.Length > 0);
+        }
+        Check("保存失败保留原记录", File.ReadAllText(file) == before);
+        Check("解除锁定后可重试保存", LibraryStore.Save(data, file).Ok && LibraryStore.Load(file).Games.Single().Name == game.Name);
+        Check("根构建路径兼容旧版本", BuildCatalog.SourceDirectory(work, "310.9") == work);
+        Check("保守构建使用独立目录", BuildCatalog.SourceDirectory(work, "310.1") == Path.Combine(work, "variants", "310.1"));
+        Check("保守构建 DLL 路由独立", BuildCatalog.RemotePath("alternatives/d3d12.dll", "310.1") == "310.1/alternatives/d3d12.dll");
+        Check("保守构建复用上游 INI", BuildCatalog.RemotePath(ModSource.IniName, "310.1") == ModSource.IniName);
+        game.Profile.RuntimeModel = "310.1";
+        Check("310.1 默认配置可用", BuildCatalog.ConfigurationError(game.Profile) is null);
+        game.Profile.MaxGeneratedFrames = 5;
+        Check("310.1 拒绝 6X 且不覆盖配置", BuildCatalog.ConfigurationError(game.Profile) is not null && game.Profile.MaxGeneratedFrames == 5);
+        game.Profile.MaxGeneratedFrames = 3;
+        game.Profile.OptimizedTier = 2;
+        Check("310.1 拒绝有损档位", BuildCatalog.ConfigurationError(game.Profile) is not null);
+        game.Profile.OptimizedTier = 1;
+        game.Profile.Preset = "B";
+        Check("310.1 拒绝强制预设", BuildCatalog.ConfigurationError(game.Profile) is not null);
+        game.Profile.Preset = "Auto";
+        var sourceRoot = MakeSyntheticModSource(Path.Combine(work, "BuildSource"));
+        File.WriteAllText(Path.Combine(sourceRoot, ModSource.IniName), "; Native 0.3.5\n[FrameGeneration]\nEnabled=1\nOptimized=1\nPreset=Auto\nMaxGeneratedFrames=3\n[Logging]\nLevel=1\n");
+        var source = new ModSource(sourceRoot);
+        Check("构建不匹配时部署被拒绝", !DeploymentService.Deploy(game, source).Ok && !File.Exists(Path.Combine(game.RenderDir, "version.dll")));
+        File.WriteAllText(Path.Combine(sourceRoot, BuildCatalog.Marker), "310.1");
+        source = new ModSource(sourceRoot);
+        Check("构建标记被读取", source.RuntimeModel == "310.1");
+        game.Deployment = null;
+        game.PreferredProxy = "version.dll";
+        Check("匹配构建部署成功", DeploymentService.Deploy(game, source).Ok);
+        Check("部署记录保存构建和配置快照", game.Deployment?.RuntimeModel == "310.1" && !ConfigurationState.NeedsApply(game));
+        game.PreferredProxy = "winmm.dll";
+        Check("多入口部署成功", DeploymentService.Deploy(game, source).Ok);
+        File.WriteAllText(ModSource.ResolveDllPath(sourceRoot, "version.dll"), "new standby bytes");
+        File.WriteAllText(Path.Combine(sourceRoot, BuildCatalog.Marker), "310.9");
+        game.Profile.RuntimeModel = "310.9";
+        Check("切换构建同步备用代理", DeploymentService.Deploy(game, new ModSource(sourceRoot)).Ok &&
+            File.ReadAllText(Path.Combine(game.RenderDir, "version.dll")) == "new standby bytes");
+        Check("切换后仍可完整恢复", DeploymentService.Restore(game, false).Ok &&
+            !File.Exists(Path.Combine(game.RenderDir, "version.dll")) && !File.Exists(Path.Combine(game.RenderDir, "winmm.dll")));
+        game.Name = "Monster Hunter Wilds";
+        Check("已知游戏自动建议", GameGuidance.Identify(game) == "wilds");
+        game.CompatibilityId = "none";
+        Check("用户可关闭自动建议", GameGuidance.Identify(game) == "none");
+        game.CompatibilityId = "nte";
+        var profile = ConfigurationState.Applied(game);
+        File.WriteAllText(Path.Combine(game.RenderDir, "dinput8.dll"), "fixture");
+        var guidance = GameGuidance.Describe(game);
+        Check("兼容检查分别显示存在和缺失文件", guidance.Contains(Loc.T("Guide.Found", "dinput8.dll")) && guidance.Contains(Loc.T("Guide.NotFound", "d3d12.dll")));
+        Check("兼容检查不改配置", ConfigurationState.Applied(game) == profile);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var cancelled = false;
+        try { ModFetcher.DownloadIntoAsync(sourceRoot, null, cts.Token, runtimeModel: "310.1").GetAwaiter().GetResult(); }
+        catch (OperationCanceledException) { cancelled = true; }
+        Check("取消下载不发布新构建", cancelled && new ModSource(sourceRoot).RuntimeModel == "310.9");
     }
 
     private static void TestPersistence(string work)

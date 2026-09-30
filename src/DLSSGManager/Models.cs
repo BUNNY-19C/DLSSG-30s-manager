@@ -50,6 +50,8 @@ public sealed class GameProfile : Observable
     private int _maxGeneratedFrames = 3;
     private int _logLevel = 1;
     private bool _diagnostics;
+    private string _runtimeModel = "310.9";
+    public string RuntimeModel { get => _runtimeModel; set => Set(ref _runtimeModel, value); }
 
     /// <summary>0.3.0: frame generation on (bundled runtime) or off (the game's own DLSSG loads).</summary>
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
@@ -92,6 +94,7 @@ public sealed class GameProfile : Observable
 
     public GameProfile Clone() => new()
     {
+        RuntimeModel = RuntimeModel,
         Router = Router,
         KernelImage = KernelImage,
         HardwareBilinear = HardwareBilinear,
@@ -105,6 +108,7 @@ public sealed class GameProfile : Observable
 
     public void CopyFrom(GameProfile other)
     {
+        RuntimeModel = other.RuntimeModel;
         Router = other.Router;
         KernelImage = other.KernelImage;
         HardwareBilinear = other.HardwareBilinear;
@@ -137,6 +141,8 @@ public sealed class DeployedFile
 /// <summary>Record of what we put into a game directory, so restore can prove it is removing our own files.</summary>
 public sealed class DeploymentInfo
 {
+    public string RuntimeModel { get; set; } = "";
+    public string AppliedConfiguration { get; set; } = "";
     public string ProxyName { get; set; } = "";
     public string ModVersion { get; set; } = "";
     public string DeployedAt { get; set; } = "";
@@ -159,6 +165,10 @@ public sealed class DeploymentInfo
 
 public sealed class GameEntry : Observable
 {
+    private bool _batchSelected;
+    private string _compatibilityId = "auto";
+    [JsonIgnore] public bool BatchSelected { get => _batchSelected; set => Set(ref _batchSelected, value); }
+    public string CompatibilityId { get => _compatibilityId; set => Set(ref _compatibilityId, value); }
     /// <summary>
     /// Sentinel preference value meaning "let the manager pick an entry name". Lives on the model
     /// because the default below and <c>DeploymentService</c>'s comparisons must agree on the exact
@@ -285,6 +295,7 @@ public sealed class GameEntry : Observable
 /// <summary>Everything persisted to %APPDATA%\DLSSGManager\library.json.</summary>
 public sealed class AppData
 {
+    public string DownloadBuild { get; set; } = "310.9";
     /// <summary>
     /// The single source of truth for the game list: the UI binds to this very collection, so anything
     /// the user adds is guaranteed to be what <see cref="LibraryStore.Save"/> writes out.

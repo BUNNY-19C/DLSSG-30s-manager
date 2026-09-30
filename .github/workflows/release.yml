@@ -112,56 +112,6 @@ jobs:
             publish/DLSSGManager.exe
             dist/DLSSGManager-*-setup.exe
             dist/SHA256SUMS.txt
-          body: |
-            ## 两种用法，任选其一 / Two ways to use it
-
-            | 文件 / File | 说明 / Description |
-            |---|---|
-            | `DLSSGManager-*-setup.exe` | **安装包**。可选安装路径与语言，带卸载程序 / **Installer.** Choose path and language, ships an uninstaller |
-            | `DLSSGManager.exe` | **绿色版**。单文件，放到任意目录双击即可 / **Portable.** One file, run it anywhere |
-
-            两者都不需要安装 .NET 运行时。 / Neither needs .NET installed.
-
-            ## 安装包 / Installer
-
-            向导先让你选安装语言（简体中文 / English），再选安装路径（默认 `C:\Program Files\DLSSG 30-Series Manager`）。
-            安装时可直接下载 Mod 文件（勾选「Mod 文件」选项组）——此时安装程序已提权，所以装到 `Program Files` 也能写入程序目录。
-
-            The wizard asks for the install language (Simplified Chinese / English), then the install location.
-            The **Mod files** task downloads the payload during setup — the installer is elevated at that point,
-            so this works even when installing to `Program Files`.
-
-            Mod 文件位置 / Where the mod files go：
-
-            - 程序目录可写 → 程序旁的 `mod\` / writable program folder → `mod\` beside it
-            - 不可写（如未提权的 `Program Files`）→ `%APPDATA%\DLSSGManager\mod`
-
-            卸载时会单独询问是否删除 Mod 文件与游戏数据；静默卸载一律保留。
-            Uninstalling asks separately; a silent uninstall keeps them, so reinstalling needs no re-download.
-
-            ## 使用 / Using it
-
-            1. 首次启动会提示获取 Mod 文件（约 75 MB）。 / The first start offers to fetch the mod files (about 75 MB).
-            2. 点「扫描 Steam 库」或「添加游戏…」，选中游戏，点「部署到该游戏」。 / Scan for games, pick one, click “Deploy to this game”.
-
-            要撤销就点「一键恢复」。程序只删除经签名和哈希确认属于本项目的文件。
-            Click “Restore” to undo; only files confirmed by signature and hash to be ours are deleted.
-
-            ## 注意 / Notes
-
-            - **带内核级反作弊的游戏不能用**（会让 Mod 失效并有账号风险）。程序会自动检测并禁止部署。
-              已确认：绝区零（米哈游 HoYoKProtect）、战争雷霆（BattlEye）、终末地（腾讯 ACE）、守望先锋（网易 NEAC）。
-            - **Games with kernel-level anti-cheat cannot use this mod** (it will not work, and a detection may risk your
-              account). The manager detects this and blocks deployment. Confirmed: Zenless Zone Zero (miHoYo HoYoKProtect),
-              War Thunder (BattlEye), Arknights: Endfield (Tencent ACE), Overwatch (NetEase NEAC).
-            - 需要 RTX 30 系（SM86）。RTX 20 系可用 SM75 路由；RTX 40/50 系原生支持帧生成，不需要本工具。
-              / Needs an RTX 30-series (SM86). RTX 20-series can use the SM75 route; RTX 40/50 support frame generation natively.
-            - 杀软可能误报——这类 DLL 代理行为容易被启发式检测盯上。 / Antivirus may flag it; DLL proxying is what heuristics watch for.
-            - 本程序只是 dlssg_for_sm86 的部署工具，不含也不修改 Mod 本身。 / This is a deployment tool only; it does not contain or modify the mod.
-
-            ## 校验 / Verify
-
-            ```powershell
-            Get-FileHash DLSSGManager.exe -Algorithm SHA256
-            ```
+          name: ${{ github.ref_name }}
+          body_path: docs/RELEASE-NOTES.md
 

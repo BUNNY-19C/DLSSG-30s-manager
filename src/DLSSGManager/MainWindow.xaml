@@ -412,6 +412,13 @@
         <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Padding="16,10">
             <StackPanel>
+                <Border x:Name="SaveFailureBanner" Visibility="Collapsed" Padding="10" Margin="0,0,0,8"
+                        Background="{DynamicResource WarnBannerBackground}" BorderBrush="{DynamicResource WarnBannerBorder}" BorderThickness="1">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="{loc:Tr Manage.RetrySave}" Style="{StaticResource ToolButton}" Click="SaveConfiguration_Click" />
+                        <TextBlock x:Name="SaveFailureText" Foreground="{DynamicResource WarnBannerBody}" TextWrapping="Wrap" />
+                    </DockPanel>
+                </Border>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -427,9 +434,17 @@
                         <TextBlock x:Name="ModSourceBadgeText" FontSize="11"
                                    Foreground="{DynamicResource BadgeOkText}" />
                     </Border>
-                    <Button x:Name="UpdateModButton" Grid.Column="3" Content="{loc:Tr Toolbar.UpdateMod}"
+                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <ComboBox x:Name="DownloadBuildCombo" Width="130" Margin="10,0,0,0" SelectedValuePath="Tag"
+                              SelectionChanged="DownloadBuild_SelectionChanged" ToolTip="{loc:Tr Manage.DownloadBuild}"
+                              AutomationProperties.Name="{loc:Tr Manage.DownloadBuild}">
+                        <ComboBoxItem Tag="310.9" Content="310.9 · 6X" />
+                        <ComboBoxItem Tag="310.1" Content="310.1 · 4X" />
+                    </ComboBox>
+                    <Button x:Name="UpdateModButton" Content="{loc:Tr Toolbar.UpdateMod}"
                             Style="{StaticResource ToolButton}" Padding="10,5" FontSize="12" Margin="10,0,0,0"
                             Click="UpdateMod_Click" ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
+                    </StackPanel>
                 </Grid>
                 <!-- 显卡信息常驻；修改名称入口收在工具区。 -->
                 <StackPanel Margin="0,6,0,0">
@@ -562,11 +577,10 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4"
-                                            Background="{Binding StatusColor, Converter={StaticResource ThemeBrush}}"
-                                            VerticalAlignment="Top" Margin="0,6,10,0" />
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding BatchSelected, Mode=TwoWay}"
+                                              AutomationProperties.Name="{Binding Name}" VerticalAlignment="Top" Margin="0,4,10,0" />
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{Binding StatusText}" FontSize="11.5"
                                                    Foreground="{Binding StatusColor, Converter={StaticResource ThemeBrush}}"
@@ -602,13 +616,23 @@
                     <!-- 批量操作：低频，收在边栏底部 -->
                     <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                             Padding="12,9">
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="{loc:Tr Action.DeployAll}" Style="{StaticResource ToolButton}"
+                        <StackPanel x:Name="BatchControls">
+                            <TextBlock x:Name="BatchSelectionText" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6" />
+                            <WrapPanel>
+                                <Button Content="{loc:Tr Manage.SelectVisible}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Click="SelectVisible_Click" />
+                                <Button Content="{loc:Tr Manage.ClearSelection}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Click="ClearBatchSelection_Click" />
+                            </WrapPanel>
+                            <WrapPanel Margin="0,6,0,0">
+                            <Button x:Name="DeploySelectedButton" Style="{StaticResource ToolButton}"
                                     Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="DeployAll_Click" ToolTip="{loc:Tr List.BatchScope}" />
-                            <Button Content="{loc:Tr Action.RestoreAll}" Style="{StaticResource DangerButton}"
+                            <Button x:Name="RestoreSelectedButton" Style="{StaticResource DangerButton}"
                                     Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="RestoreAll_Click" ToolTip="{loc:Tr List.BatchScope}" />
-                            <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}"
-                                    Padding="10,5" FontSize="12" Margin="0" Click="RefreshAll_Click" />
+                            </WrapPanel>
+                            <WrapPanel Margin="0,6,0,0">
+                                <Button Content="{loc:Tr Manage.SelectUpdates}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Click="SelectUpdates_Click" />
+                                <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}"
+                                        Padding="8,4" FontSize="12" Click="RefreshAll_Click" />
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -618,6 +642,15 @@
             <Border Grid.Column="1" Background="{DynamicResource WindowBackground}">
                 <ScrollViewer x:Name="DetailScrollViewer" VerticalScrollBarVisibility="Auto" Padding="16,14,16,14">
                     <StackPanel>
+                        <Border x:Name="BatchResultsPanel" Visibility="Collapsed" Style="{StaticResource SectionCard}">
+                            <StackPanel>
+                                <WrapPanel>
+                                    <Button x:Name="RetryBatchButton" Content="{loc:Tr Manage.RetryFailed}" Style="{StaticResource ToolButton}" Click="RetryBatch_Click" />
+                                    <Button Content="{loc:Tr Manage.HideResults}" Style="{StaticResource ToolButton}" Click="HideBatchResults_Click" />
+                                </WrapPanel>
+                                <TextBox x:Name="BatchResultsBox" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
                         <TextBlock x:Name="NoSelectionText" Text="{loc:Tr List.Empty}"
                                    Foreground="{DynamicResource TextMuted}" Margin="0,24,0,0" />
 
@@ -644,6 +677,8 @@
                                                FontSize="12" TextWrapping="Wrap" Margin="0,3,0,12" />
 
                                     <WrapPanel>
+                                        <Button x:Name="SaveConfigurationButton" Content="{loc:Tr Manage.Save}" Style="{StaticResource ToolButton}"
+                                                Margin="0,0,6,8" Click="SaveConfiguration_Click" />
                                         <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
                                                 Margin="0,0,6,8" Click="Deploy_Click" />
                                         <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
@@ -663,6 +698,8 @@
                                     </WrapPanel>
                                     <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
                                               IsChecked="False" Margin="0,4,0,0" />
+                                    <TextBlock x:Name="ConfigurationStatusText" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                    <TextBlock x:Name="PayloadStatusText" Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
 
@@ -714,6 +751,15 @@
                             <Border Style="{StaticResource SectionCard}">
                                 <StackPanel>
                                     <TextBlock Text="{loc:Tr Detail.GroupFg}" Style="{StaticResource SectionTitle}" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{loc:Tr Manage.GameBuild}" Style="{StaticResource FieldLabel}" />
+                                        <ComboBox x:Name="RuntimeBuildCombo" Grid.Column="1" SelectedValuePath="Tag" SelectedValue="{Binding Profile.RuntimeModel, Mode=TwoWay}">
+                                            <ComboBoxItem Tag="310.9" Content="310.9 · 6X" />
+                                            <ComboBoxItem Tag="310.1" Content="310.1 · 4X" />
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock x:Name="BuildWarningText" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarnBrush}" Margin="0,0,0,8" />
 
                                     <!--
                                         两组配置项，按 mod 源里的 INI schema 显示一组：
@@ -837,6 +883,20 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border Style="{StaticResource SectionCard}">
+                                <Expander x:Name="GuidanceExpander" Header="{loc:Tr Guide.Title}" Foreground="{DynamicResource TextPrimary}">
+                                    <StackPanel Margin="0,10,0,0">
+                                        <ComboBox x:Name="GuidanceCombo" SelectedValuePath="Tag" SelectedValue="{Binding CompatibilityId, Mode=TwoWay}">
+                                            <ComboBoxItem Tag="auto" Content="{loc:Tr Guide.Auto}" />
+                                            <ComboBoxItem Tag="none" Content="{loc:Tr Guide.Disable}" />
+                                            <ComboBoxItem Tag="wilds" Content="{loc:Tr Guide.WildsName}" />
+                                            <ComboBoxItem Tag="zzz" Content="{loc:Tr Guide.ZzzName}" />
+                                            <ComboBoxItem Tag="nte" Content="{loc:Tr Guide.NteName}" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="GuidanceText" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                </Expander>
+                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

@@ -46,6 +46,7 @@ public sealed class ModSource
     public const string AltDirName = "altnative";
 
     public string Root { get; }
+    public string RuntimeModel { get; } = BuildCatalog.Default;
     public bool IsValid { get; }
     public string Version { get; } = Loc.T("ModSource.UnknownVersion");
     public List<string> Proxies { get; } = new();
@@ -63,6 +64,13 @@ public sealed class ModSource
     public ModSource(string root)
     {
         Root = root ?? "";
+        var buildMarker = Path.Combine(Root, BuildCatalog.Marker);
+        try
+        {
+            if (File.Exists(buildMarker)) RuntimeModel = BuildCatalog.Normalize(File.ReadAllText(buildMarker).Trim());
+        }
+        catch (IOException ex) { ValidationMessage = ex.Message; return; }
+        catch (UnauthorizedAccessException ex) { ValidationMessage = ex.Message; return; }
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
             ValidationMessage = Loc.T("ModSource.DirMissing");

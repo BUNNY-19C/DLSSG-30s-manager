@@ -575,7 +575,8 @@ public static class ModFetcher
         string? sourceId = null,
         string? versionLabel = null,
         IProgress<FetchProgress>? byteProgress = null,
-        DownloadGate? gate = null)
+        DownloadGate? gate = null,
+        string runtimeModel = BuildCatalog.Default)
     {
         var sources = ActiveSources(sourceId);
         var singleSource = sources.Count == 1 && IsExplicitChoice(sourceId);
@@ -600,7 +601,7 @@ public static class ModFetcher
                 if (attempt > 1)
                     await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
 
-                var result = await AttemptAsync(source, destination, progress, ct, versionLabel, byteProgress, gate)
+                var result = await AttemptAsync(source, destination, progress, ct, versionLabel, byteProgress, gate, runtimeModel)
                     .ConfigureAwait(false);
                 if (result.Ok) return result;
 
@@ -627,7 +628,8 @@ public static class ModFetcher
         CancellationToken ct,
         string? versionLabel,
         IProgress<FetchProgress>? byteProgress,
-        DownloadGate? gate)
+        DownloadGate? gate,
+        string runtimeModel)
     {
         var r = new OpResult();
         var staging = Path.Combine(Path.GetTempPath(), "dlssg_" + Guid.NewGuid().ToString("N"));
@@ -637,9 +639,15 @@ public static class ModFetcher
             Directory.CreateDirectory(destination);
 
             if (source.IsArchive)
+            {
                 await FetchArchiveAsync(source, staging, r, progress, ct, byteProgress, gate).ConfigureAwait(false);
+                if (runtimeModel == BuildCatalog.Conservative)
+                    foreach (var artifact in Payload.Where(a => a.NeedsSignature))
+                        File.Copy(Path.Combine(staging, BuildCatalog.RemotePath(artifact.SourcePath, runtimeModel)),
+                            Path.Combine(staging, artifact.SourcePath), overwrite: true);
+            }
             else
-                await FetchIndividualFilesAsync(source, staging, r, progress, ct, byteProgress, gate).ConfigureAwait(false);
+                await FetchIndividualFilesAsync(source, staging, r, progress, ct, byteProgress, gate, runtimeModel).ConfigureAwait(false);
 
             // Verify before touching the destination: a mirror must not be able to write a DLL that
             // is not the project's build.
@@ -651,7 +659,9 @@ public static class ModFetcher
                 return r;
             }
 
+            ct.ThrowIfCancellationRequested();
             var copied = Publish(staging, destination);
+            File.WriteAllText(Path.Combine(destination, BuildCatalog.Marker), BuildCatalog.Normalize(runtimeModel));
             PruneSupersededEntries(destination, r);
             var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName)) ?? versionLabel;
 
@@ -746,7 +756,7 @@ public static class ModFetcher
     }
 
     private static async Task FetchIndividualFilesAsync(Source source, string staging, OpResult r, IProgress<string>? progress,
-        CancellationToken ct, IProgress<FetchProgress>? byteProgress, DownloadGate? gate)
+        CancellationToken ct, IProgress<FetchProgress>? byteProgress, DownloadGate? gate, string runtimeModel)
     {
         using var client = CreateClient();
         Directory.CreateDirectory(staging);
@@ -763,7 +773,7 @@ public static class ModFetcher
             done++;
             progress?.Report(Loc.T("Fetch.Downloading", artifact.SourcePath, done, Payload.Length));
 
-            var url = new Uri(UrlFor(source, RepoPath, RepoRef, artifact.SourcePath));
+            var url = new Uri(UrlFor(source, RepoPath, RepoRef, BuildCatalog.RemotePath(artifact.SourcePath, runtimeModel)));
             var target = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
 
             // Nested entries such as altnative/winmm.dll need their folder to exist before writing.

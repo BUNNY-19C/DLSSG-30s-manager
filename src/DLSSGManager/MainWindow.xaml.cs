@@ -18,7 +18,6 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _fetchCts;
     private ModFetcher.DownloadGate? _fetchGate;
 
-    private bool _busy;
 
     /// <summary>Keeps overlapping status refreshes from racing over the same game properties.</summary>
     private bool _statusRefreshRunning;
@@ -78,10 +77,12 @@ public partial class MainWindow : Window
         _gamesView.LiveFilteringProperties.Add(nameof(GameEntry.Name));
         _gamesView.LiveFilteringProperties.Add(nameof(GameEntry.Status));
         _gamesView.IsLiveFiltering = true;
+        ((System.Collections.Specialized.INotifyCollectionChanged)_gamesView).CollectionChanged += (_, _) => UpdateManagementState();
         GameList.ItemsSource = _gamesView;
         if (_data.Games.Count > 0) GameList.SelectedIndex = 0;
 
         Loaded += OnLoaded;
+        InitializeManagement();
     }
 
     private GameEntry? Selected => GameList.SelectedItem as GameEntry;
@@ -169,8 +170,7 @@ public partial class MainWindow : Window
         _suppressProxyChange = true;
         try
         {
-            var found = ModSourceLocator.FindExisting(_data.ModSourcePath);
-            var imported = found is null ? Array.Empty<string>() : new ModSource(found).ImportedProxies.ToArray();
+            var imported = CurrentSource().ImportedProxies.ToArray();
 
             ProxyCombo.Items.Clear();
             ProxyCombo.Items.Add(new ComboBoxItem { Content = Loc.T("Common.Auto"), Tag = DeploymentService.AutoProxy });
@@ -211,7 +211,7 @@ public partial class MainWindow : Window
         foreach (var game in _data.Games) game.RaiseThemeColors();
 
         _data.InterfaceTheme = ThemeKeys.StorageValue(wanted);
-        LibraryStore.Save(_data);
+        SaveLibrary();
     }
 
     /// <summary>
@@ -257,6 +257,7 @@ public partial class MainWindow : Window
 
         // Text set from code does not follow the bindings, so it is re-applied here.
         BuildLocalizedCombos();
+        BuildThemeCombo();
         BuildProxyCombo();
         RefreshCodeText();
         RefreshModSource();
@@ -264,7 +265,7 @@ public partial class MainWindow : Window
         RefreshAllStatus();
 
         _data.InterfaceLanguage = language;
-        LibraryStore.Save(_data);
+        SaveLibrary();
     }
 
     /// <summary>
@@ -318,7 +319,8 @@ public partial class MainWindow : Window
     {
         if (_busy) return;
 
-        var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
+        _data.ModSourcePath = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
+        var target = BuildCatalog.SourceDirectory(_data.ModSourcePath, _data.DownloadBuild);
         _log.Write(Loc.T("Fetch.AutoStart", target));
 
         _busy = true;
@@ -352,13 +354,13 @@ public partial class MainWindow : Window
         _log.Result(result.Ok, result.Message);
 
         RefreshModSource();
-        if (result.Ok)
+        if (result.Ok && !_closeWhenIdle)
         {
             // The body already starts with the result message (its {0}) — do not repeat it.
             MessageBox.Show(this, Loc.T("Fetch.DoneBodyFirst", result.Message),
                 Loc.T("Fetch.DoneTitleFirst"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        else
+        else if (!result.Ok)
         {
             _log.Write(Loc.T("Fetch.AutoFailed", result.Message));
         }
@@ -419,6 +421,7 @@ public partial class MainWindow : Window
 
     private async void ProbeGpuInBackground()
     {
+        _pendingChecks++;
         try
         {
             var info = await Task.Run(Gpu.Probe);
@@ -427,7 +430,7 @@ public partial class MainWindow : Window
             _data.GpuName = info.Name;
             _data.GpuDriver = info.Driver;
             _data.RecommendedRouter = info.Router;
-            LibraryStore.Save(_data);
+            SaveLibrary();
 
             ApplyGpuText();
             _log.Write(Loc.T("Toolbar.Gpu") + " " + info.Name + " · " + info.Advice);
@@ -437,6 +440,7 @@ public partial class MainWindow : Window
             // The toolbar simply stays empty; a probe failure is not worth interrupting the user.
             AppPaths.Log("显卡探测失败: " + ex);
         }
+        finally { _pendingChecks--; }
     }
 
     /// <summary>
@@ -462,21 +466,24 @@ public partial class MainWindow : Window
     /// bin\ still finds the repository's mod\ folder.
     /// </summary>
     private string SourcePath =>
-        ModSourceLocator.FindExisting(_data.ModSourcePath) ?? _data.ModSourcePath;
+        ModSourceLocator.FindExisting(_data.ModSourcePath) ??
+        (string.IsNullOrWhiteSpace(_data.ModSourcePath) ? AppPaths.UserModDir : _data.ModSourcePath);
 
-    private ModSource CurrentSource() => new(SourcePath);
+    private ModSource CurrentSource(GameEntry? game = null) => new(BuildCatalog.SourceDirectory(SourcePath,
+        (game ?? Selected)?.Profile.RuntimeModel ?? BuildCatalog.Default));
 
-    private bool HasModSource => ModSourceLocator.FindExisting(_data.ModSourcePath) is not null;
+    private bool HasModSource => ModSourceLocator.FindExisting(_data.ModSourcePath) is not null ||
+        ModSourceLocator.LooksLikeSource(BuildCatalog.SourceDirectory(SourcePath, _data.DownloadBuild));
 
     private void RefreshModSource()
     {
-        var existing = ModSourceLocator.FindExisting(_data.ModSourcePath);
+        var selectedRoot = CurrentSource().Root;
+        var existing = ModSourceLocator.LooksLikeSource(selectedRoot) ? selectedRoot : null;
 
         if (existing is null)
         {
             // Show where a download would land, and say plainly that files are missing.
-            var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
-            ModSourceText.Text = target;
+            ModSourceText.Text = selectedRoot;
             ModSourceBadgeText.Text = Loc.T("Toolbar.ModNotReady");
             _modSourceValid = null;
             ColorFromCode();
@@ -517,13 +524,15 @@ public partial class MainWindow : Window
     {
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
-        var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
+        var sourceRoot = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
+        var target = BuildCatalog.SourceDirectory(sourceRoot, _data.DownloadBuild);
 
         // The picker replaces a plain confirmation dialog: choosing where to download from is the one
         // decision worth surfacing here, and it doubles as the confirmation step.
         var picker = new SourcePickerDialog { Owner = this };
         if (picker.ShowDialog() != true) return;
 
+        _data.ModSourcePath = sourceRoot;
         DownloadModFiles(target, picker.SelectedSourceId);
     }
 
@@ -540,8 +549,8 @@ public partial class MainWindow : Window
     {
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
-        var found = ModSourceLocator.FindExisting(_data.ModSourcePath);
-        if (found is null)
+        var found = CurrentSource().Root;
+        if (!ModSourceLocator.LooksLikeSource(found))
         {
             _log.Write(Loc.T("Proxy.AddNeedSource"));
             MessageBox.Show(this, Loc.T("Proxy.AddNeedSource"), Loc.T("Proxy.AddTitle"),
@@ -616,7 +625,7 @@ public partial class MainWindow : Window
 
         // Re-read the profile defaults from the freshly downloaded INI text.
         RefreshModSource();
-        if (result.Ok)
+        if (result.Ok && !_closeWhenIdle)
         {
             // The body already starts with the result message (its {0}), so it is not repeated here.
             MessageBox.Show(this,
@@ -655,8 +664,10 @@ public partial class MainWindow : Window
             var detected = await ModFetcher.DetectLatestVersionAsync(ct);
             if (detected is not null) textProgress.Report(Loc.T("Fetch.AutoDetected", detected));
 
-            return await ModFetcher.DownloadIntoAsync(target, textProgress, ct, sourceId, detected,
-                                                      byteProgress, _fetchGate);
+            var result = await ModFetcher.DownloadIntoAsync(target, textProgress, ct, sourceId, detected,
+                                                           byteProgress, _fetchGate, _data.DownloadBuild);
+            if (result.Ok) SaveLibrary();
+            return result;
         }
         finally
         {
@@ -734,6 +745,7 @@ public partial class MainWindow : Window
         _gamesView.Refresh();
         if (selected is not null && _gamesView.Contains(selected)) GameList.SelectedItem = selected;
         else GameList.SelectedIndex = GameList.Items.Count > 0 ? 0 : -1;
+        UpdateManagementState();
     }
 
     private void ClearGameSearch_Click(object sender, RoutedEventArgs e)
@@ -747,10 +759,12 @@ public partial class MainWindow : Window
         var game = Selected;
         NoSelectionText.Visibility = game is null ? Visibility.Visible : Visibility.Collapsed;
         DetailPanel.Visibility = game is null ? Visibility.Collapsed : Visibility.Visible;
-        if (game is null) return;
+        if (game is null) { UpdateManagementState(); return; }
 
         DataContext = game;
         ProxyCombo.SelectedValue = game.PreferredProxy;
+        RefreshModSource();
+        BuildProxyCombo();
         UpdateStatusCard();
         DetailScrollViewer.ScrollToTop();
     }
@@ -782,6 +796,7 @@ public partial class MainWindow : Window
         // name survive — a community entry such as d3d12.dll exists precisely because some do — so the
         // decision is the user's, not the scan's.
         DeployButton.ToolTip = game.HasKernelAntiCheat ? Loc.T("Deploy.BlockedTooltip") : null;
+        UpdateManagementState();
     }
 
     private static string StatusDetailText(GameEntry game)
@@ -804,6 +819,7 @@ public partial class MainWindow : Window
 
     private void AddGame_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         var dialog = new OpenFolderDialog { Title = Loc.T("List.AddFolderTitle") };
         if (!string.IsNullOrWhiteSpace(_data.LastScanRoot) && Directory.Exists(_data.LastScanRoot))
             dialog.InitialDirectory = _data.LastScanRoot;
@@ -831,6 +847,7 @@ public partial class MainWindow : Window
 
     private void RemoveGame_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         var game = Selected;
         if (game is null) return;
 
@@ -842,7 +859,7 @@ public partial class MainWindow : Window
             return;
 
         _data.Games.Remove(game);
-        LibraryStore.Save(_data);
+        SaveLibrary();
         GameList.SelectedIndex = GameList.Items.Count > 0 ? 0 : -1;
     }
 
@@ -851,13 +868,17 @@ public partial class MainWindow : Window
     private async void Check_Click(object sender, RoutedEventArgs e)
     {
         var game = Selected;
-        if (game is null) return;
-
-        var check = await Task.Run(() => DeploymentService.Evaluate(game));
-        DeploymentService.Apply(game, check);
-
-        UpdateStatusCard();
-        _log.Write(Loc.T("Status.CheckResult", game.Name, game.StatusText, game.StatusDetail));
+        if (game is null || _busy || _statusRefreshRunning) return;
+        _busy = true;
+        try
+        {
+            var check = await Task.Run(() => DeploymentService.Evaluate(game));
+            DeploymentService.Apply(game, check);
+            UpdateStatusCard();
+            _log.Write(Loc.T("Status.CheckResult", game.Name, game.StatusText, game.StatusDetail));
+        }
+        catch (Exception ex) { _log.Write(Loc.T("Status.RefreshFailed", ex.Message)); }
+        finally { _busy = false; }
     }
 
     private void RefreshAll_Click(object sender, RoutedEventArgs e) => RefreshAllStatus();
@@ -875,7 +896,7 @@ public partial class MainWindow : Window
     {
         // Called at startup, after batch operations, and by the refresh button, so two runs can
         // otherwise overlap and fight over the same properties.
-        if (_statusRefreshRunning) return;
+        if (_statusRefreshRunning || _busy) return;
         _statusRefreshRunning = true;
 
         try
@@ -886,7 +907,7 @@ public partial class MainWindow : Window
 
             foreach (var (game, check) in results) DeploymentService.Apply(game, check);
 
-            LibraryStore.Save(_data);
+            SaveLibrary();
             UpdateStatusCard();
         }
         catch (Exception ex)

@@ -38,7 +38,8 @@ public partial class MainWindow
     /// </summary>
     private async void RunDeploy(GameEntry game)
     {
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
+        if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
+        if (_saveFailure is not null && !SaveLibrary()) return;
 
         _busy = true;
         BatchStatusText.Text = Loc.T("Deploy.Starting", game.Name);
@@ -63,14 +64,14 @@ public partial class MainWindow
                 _log.Write(Loc.T("Anti.OverrideLog", game.Name, protection.Summary));
             }
 
-            var source = CurrentSource();
+            var source = CurrentSource(game);
             var result = await Task.Run(() => DeploymentService.Deploy(game, source,
                 allowProtected: protection.HasKernelAntiCheat));
 
             _log.Details(result.Lines);
             _log.Result(result.Ok, result.Message);
 
-            LibraryStore.Save(_data);
+            SaveLibrary();
             await FinishGameActionAsync(game);
         }
         catch (Exception ex)
@@ -96,7 +97,7 @@ public partial class MainWindow
     {
         var check = await Task.Run(() => DeploymentService.Evaluate(game));
         DeploymentService.Apply(game, check);
-        LibraryStore.Save(_data);
+        SaveLibrary();
         UpdateStatusCard();
     }
 
@@ -117,7 +118,8 @@ public partial class MainWindow
 
     private async void RunRestore(GameEntry game)
     {
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
+        if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
+        if (_saveFailure is not null && !SaveLibrary()) return;
 
         _busy = true;
         BatchStatusText.Text = Loc.T("Restore.Starting", game.Name);
@@ -129,6 +131,7 @@ public partial class MainWindow
 
             _log.Details(result.Lines);
             _log.Result(result.Ok, result.Message);
+            SaveLibrary();
             await FinishGameActionAsync(game);
         }
         catch (Exception ex)
@@ -145,6 +148,8 @@ public partial class MainWindow
 
     private async void Adopt_Click(object sender, RoutedEventArgs e)
     {
+        if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
+        if (_saveFailure is not null && !SaveLibrary()) return;
         var game = Selected;
         if (game is null) return;
 
@@ -164,6 +169,7 @@ public partial class MainWindow
             var result = await Task.Run(() => DeploymentService.Adopt(game));
             _log.Details(result.Lines);
             _log.Result(result.Ok, result.Message);
+            SaveLibrary();
             await FinishGameActionAsync(game);
         }
         catch (Exception ex)
@@ -180,130 +186,11 @@ public partial class MainWindow
 
     // ---- batch --------------------------------------------------------------
 
-    private async void DeployAll_Click(object sender, RoutedEventArgs e)
-    {
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
+    private async void DeployAll_Click(object sender, RoutedEventArgs e) =>
+        await RunBatchAsync(GameList.Items.Cast<GameEntry>().Where(g => g.BatchSelected).ToList(), false);
 
-        var targets = _data.Games
-            .Where(g => !string.IsNullOrWhiteSpace(g.RenderDir) && Directory.Exists(g.RenderDir))
-            .ToList();
-
-        if (targets.Count == 0) { _log.Write(Loc.T("Batch.NothingToDeploy")); return; }
-
-        var protectedGames = targets.Where(g => g.HasKernelAntiCheat).ToList();
-
-        // Protected games stay in the list: the user asked for a batch, and the scan cannot know whether
-        // this game's protection lets the chosen entry name survive. They are flagged as a risk and
-        // deployed on the strength of this one confirmation.
-        var body = protectedGames.Count == 0
-            ? Loc.T("Batch.DeployConfirm", targets.Count,
-                string.Join("\n", targets.Select(t => "· " + t.Name)))
-            : Loc.T("Batch.DeployConfirmWithRisk",
-                targets.Count,
-                string.Join("\n", targets.Select(t => "· " + t.Name)),
-                protectedGames.Count,
-                string.Join("\n", protectedGames.Select(t => $"· {t.Name} — {t.Protection!.Products}")));
-
-        if (MessageBox.Show(body, Loc.T("Batch.DeployTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
-            return;
-
-        _log.Write(Loc.T("Batch.DeployStart", targets.Count));
-
-        _busy = true;
-        var progress = UiProgress();
-
-        try
-        {
-            var ok = await Task.Run(() =>
-            {
-                var count = 0;
-                var source = CurrentSource();
-
-                foreach (var game in targets)
-                {
-                    // The confirmation above covers the anti-cheat risk for every game in the list.
-                    var result = DeploymentService.Deploy(game, source, allowProtected: game.HasKernelAntiCheat);
-                    var mark = result.Ok ? "✓" : "✗";
-                    var risk = game.HasKernelAntiCheat ? Loc.T("Batch.RiskMark") : "";
-                    _log.Write($"  {mark}{risk} {game.Name}：{result.Message}");
-
-                    if (result.Ok) count++;
-                    progress.Report(Loc.T("Batch.Progress", count, targets.Count));
-                }
-
-                return count;
-            });
-
-            _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Deploy"), ok, targets.Count));
-            BatchStatusText.Text = Loc.T("Batch.LastDeploy", ok, targets.Count);
-            LibraryStore.Save(_data);
-            RefreshAllStatus();
-        }
-        catch (Exception ex)
-        {
-            _log.Write("✗ " + ex.Message);
-            AppPaths.Log("批量部署失败: " + ex);
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private async void RestoreAll_Click(object sender, RoutedEventArgs e)
-    {
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
-
-        var targets = _data.Games
-            .Where(g => g.Deployment is not null && !string.IsNullOrWhiteSpace(g.RenderDir) && Directory.Exists(g.RenderDir))
-            .ToList();
-
-        if (targets.Count == 0) { _log.Write(Loc.T("Batch.NothingToRestore")); return; }
-
-        var body = Loc.T("Batch.RestoreConfirm", targets.Count,
-            string.Join("\n", targets.Select(t => "· " + t.Name)));
-        if (MessageBox.Show(body, Loc.T("Batch.RestoreTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
-            return;
-
-        _log.Write(Loc.T("Batch.RestoreStart", targets.Count));
-
-        _busy = true;
-        var removeLogs = RemoveLogsCheck.IsChecked == true;
-        var progress = UiProgress();
-
-        try
-        {
-            var ok = await Task.Run(() =>
-            {
-                var count = 0;
-
-                foreach (var game in targets)
-                {
-                    var result = DeploymentService.Restore(game, removeLogs);
-                    var mark = result.Ok ? "✓" : "✗";
-                    _log.Write($"  {mark} {game.Name}：{result.Message}");
-                    if (result.Ok) count++;
-                    progress.Report(Loc.T("Batch.Progress", count, targets.Count));
-                }
-
-                return count;
-            });
-
-            _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Restore"), ok, targets.Count));
-            BatchStatusText.Text = Loc.T("Batch.LastRestore", ok, targets.Count);
-            LibraryStore.Save(_data);
-            RefreshAllStatus();
-        }
-        catch (Exception ex)
-        {
-            _log.Write("✗ " + ex.Message);
-            AppPaths.Log("批量恢复失败: " + ex);
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
+    private async void RestoreAll_Click(object sender, RoutedEventArgs e) =>
+        await RunBatchAsync(GameList.Items.Cast<GameEntry>().Where(g => g.BatchSelected).ToList(), true);
 
     // ---- scanning -----------------------------------------------------------
 
@@ -315,6 +202,7 @@ public partial class MainWindow
 
     private void ScanFolder_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         var dialog = new OpenFolderDialog { Title = Loc.T("Scan.FolderTitle") };
         if (!string.IsNullOrWhiteSpace(_data.LastScanRoot) && Directory.Exists(_data.LastScanRoot))
             dialog.InitialDirectory = _data.LastScanRoot;
@@ -323,7 +211,7 @@ public partial class MainWindow
 
         var root = dialog.FolderName;
         _data.LastScanRoot = root;
-        LibraryStore.Save(_data);
+        SaveLibrary();
 
         var progress = UiProgress();
         StartScan(root, token => Detection.ScanFolder(root, progress, token));
@@ -343,7 +231,7 @@ public partial class MainWindow
 
     private async void StartScan(string label, Func<CancellationToken, List<GameCandidate>> scan)
     {
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
+        if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         _busy = true;
         _scanCts = new CancellationTokenSource();
@@ -374,7 +262,7 @@ public partial class MainWindow
         }
 
         if (found is null) { _log.Write(Loc.T("Scan.Cancelled")); return; }
-        MergeCandidates(found);
+        if (!_closeWhenIdle) MergeCandidates(found);
     }
 
     /// <summary>
@@ -384,6 +272,7 @@ public partial class MainWindow
     /// </summary>
     private async void MergeCandidates(List<GameCandidate> found)
     {
+        _pendingChecks++;
         var added = 0;
         var touched = new List<GameEntry>();
         var newlyAdded = new List<GameEntry>();
@@ -430,7 +319,7 @@ public partial class MainWindow
 
             foreach (var (game, check) in results) DeploymentService.Apply(game, check);
 
-            LibraryStore.Save(_data);
+            SaveLibrary();
             UpdateStatusCard();
         }
         catch (Exception ex)
@@ -440,7 +329,8 @@ public partial class MainWindow
         }
 
         // One summary prompt for the whole scan rather than a dialog per protected title.
-        WarnAboutProtected(newlyAdded);
+        if (!_closeWhenIdle) WarnAboutProtected(newlyAdded);
+        _pendingChecks--;
     }
 
     // ---- path pickers -------------------------------------------------------
@@ -496,7 +386,7 @@ public partial class MainWindow
         if (dialog.ShowDialog() != true) return;
 
         game.ExePath = dialog.FileName;
-        LibraryStore.Save(_data);
+        SaveLibrary();
     }
 
     // ---- open / launch ------------------------------------------------------
