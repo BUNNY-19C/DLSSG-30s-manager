@@ -2,61 +2,125 @@
 
 [简体中文](README.md) | **English**
 
-[![Release](https://img.shields.io/github/v/release/BUNNY-19C/DLSSG-30s-manager?style=flat-square&label=download)](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)
+[![Release](https://img.shields.io/github/v/release/BUNNY-19C/DLSSG-30s-manager?style=flat-square&label=latest)](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)
 [![License](https://img.shields.io/github/license/BUNNY-19C/DLSSG-30s-manager?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?style=flat-square)](#)
-[![GPU](https://img.shields.io/badge/GPU-RTX%2030%20series%20(SM86)-76B900?style=flat-square)](#)
+![Platform](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4?style=flat-square)
+![GPU](https://img.shields.io/badge/GPU-RTX%2030%20Series-76B900?style=flat-square)
 
-> [!NOTE]
-> **This project is developed by AI.** The code, the interface text, the documentation and the tests are all AI-generated; the maintainer runs them on real hardware and publishes. Every number here comes from an actual run, but AI output is not free of mistakes — please [open an issue](../../issues) when you find one.
+A graphical manager for [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86): find games, configure frame generation per game, deploy proxy DLLs, restore original files, and manage local Mod updates.
 
-A graphical manager for [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86): deploy the mod per game and restore with one click, instead of copying DLLs into game folders by hand. The mod is a DLL proxy — put the proxy DLL and `dlssg_sm86.ini` beside the game's rendering executable and RTX 30 series (SM86) cards get DLSS frame generation.
-
-> [!IMPORTANT]
-> **Game-specific prerequisites**
->
-> - **Monster Hunter Wilds** needs the [REFramework](https://github.com/praydog/REFramework) prerequisite first: download its `MHWILDS.zip` and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` into the game root. Without it, deploying this mod crashes the game every time (measured).
-> - **Zenless Zone Zero** needs the `d3d12.dll` entry — names like `version.dll` get renamed away by its anti-cheat. The manager downloads that DLL for you.
-> - **Neverness to Everness**: the game folder is `Client\WindowsNoEditor\HT\Binaries\Win64` and the game ships no DLSS-G payload. Frame generation needs three files side by side: `d3d12.dll`, `dinput8.dll` and `dlssg_sm86.ini` (both proxies are used — the set is not redundant). v1.9.2+ scans recognise this structure; adopt the hand install, and redeploying keeps every proxy recorded instead of trimming to one.
+Primarily intended for **RTX 30-series GPUs**, with hardware testing by the maintainer on an RTX 3080 Ti. The manager handles configuration and files; image quality, performance and game compatibility depend on the upstream Mod, driver and game.
 
 ## Download
 
-Grab either file from [Releases](../../releases/latest); neither needs .NET installed: `DLSSGManager-*-setup.exe` (installer, choose your own path, comes with an uninstaller) or `DLSSGManager.exe` (portable, single file).
+Open the **[latest release](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)** and choose:
 
-The mod files (about 101 MB) are not bundled and setup does not download them either — installing needs no network. **The first start detects the newest published version and fetches it**; later updates use “Download / update mod files”.
+| File | Use |
+|---|---|
+| `DLSSGManager-VERSION-setup.exe` | Installer with a choice of location and language, plus an uninstaller |
+| `DLSSGManager.exe` | Portable single executable; place it in a folder and run it |
+| `SHA256SUMS.txt` | SHA256 checksums for the executables |
 
-## Using it
+Supports Windows 10 / 11 x64. **No separate .NET installation is required.** Setup does not use the network. Mod files are downloaded separately on first start, or manually through “Download / update mod files”.
 
-1. “Scan Steam library” or “Add game…”. Games are found by the `nvngx_dlssg.dll` they ship, and the folder is scanned for anti-cheat at the same time.
-2. Select a game and adjust its configuration. “Save configuration” saves in the manager; “Deploy to this game / Apply to game” writes the game files. The status card distinguishes unsaved, pending and applied settings.
-3. Click “Restore” to undo. For batch actions, check games first. Only visible checked games are processed; per-game results support retrying failed items.
+[v1.10.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
 
-Search games by name or filter by status. Proxy entries, presets and log level are under advanced settings; tools and output can be collapsed. Compatibility guidance checks known directories and prerequisites for Wilds, Zenless Zone Zero and NTE.
+## First use
+
+1. **Close the game you want to modify.** Start the manager and wait for the Mod download to finish.
+2. Use “Scan Steam library”, “Scan folder…” or “Add game…”, then select a game. Confirm that the render directory contains the actual rendering executable; some games use a separate folder structure, as described below.
+3. Choose the runtime build, frame-generation multiplier and optimization tier. Proxy entry, preset and log level are under advanced settings.
+4. Click “Deploy to this game”, or “Apply to game” for an existing deployment. Start the game and enable its corresponding frame-generation option.
+5. To undo the installation, close the game and click “Restore”.
+
+The status card shows the game state, configuration state, local payload and deployed version. Name search and status filters can be combined. Tools and output can be expanded; collapsed output still shows the latest result.
 
 > [!WARNING]
-> **Games with kernel-level anti-cheat carry account risk.** The anti-cheat may block or quarantine the proxy DLL, and a recorded detection may put your account at risk. The manager detects it and warns; whether to deploy is your decision.
+> **Games with kernel-level anti-cheat carry account risk.** Anti-cheat may block or quarantine a proxy DLL, or record a detection. The manager detects and warns; deployment requires explicit confirmation. Confirming the warning does not establish that the game permits this Mod.
 
-## Notes
+## Configuration, builds and updates
 
-- **Entry names**: `version.dll` by default, plus `winmm`, `dinput8`, `dbghelp`, `dxgi` and `d3d12`. If another mod occupies a name, the manager picks a different one.
-- **Settings** are stored per game (frame generation, consistency tier 0-3, render preset, multiplier ceiling, log level) and written into `dlssg_sm86.ini` on deploy.
-- **Builds**: choose 310.9 (up to 6X) or 310.1 (up to 4X, tiers 0/1 and Auto preset). Download the build from the top bar, then select it for the game. Unsupported settings are explained and block deployment without silently changing your choices.
-- **Updates** download local files only. The status card shows local and deployed versions separately; “Select updates” prepares games for batch application. Failed record saves offer a retry. Closing during an operation waits for completion; downloads can be cancelled before exiting.
-- **Restore** only deletes files whose signature and hash both check out; displaced originals are backed up to `%APPDATA%\DLSSGManager\restore\` first.
-- **Hand-installed copies** can be adopted, including a community `d3d12.dll` dropped in by hand (recognised by its hash).
-- **GPU**: for RTX 30 series (validated by the author on a 3080 Ti). 40/50 series support frame generation natively and do not need this. VRAM grows with output resolution, about +700–770 MiB at 4K.
-- **When something breaks**, look in `dlssg_sm86\logs` inside the game folder or click “View mod log”. The interface switches between dark/light and Chinese/English.
+### Saving versus applying
 
-## From source
+| Action or state | Meaning |
+|---|---|
+| Save configuration | Saves to the manager's library without writing game files |
+| Deploy / Apply to game | Writes the proxy DLL and configuration to the game's render directory |
+| Unsaved | Current settings differ from the configuration saved in the manager |
+| Saved, pending application | Settings are saved but not applied; older records without a configuration snapshot also show this state |
+| Applied | Settings match the last deployment record; later changes require applying again and restarting the game |
 
-You need the .NET 8 SDK; build, test and packaging commands are in [CONTRIBUTING.md](CONTRIBUTING.md). The repository carries no mod binaries — the first run fetches them (see [docs/mod-files.md](docs/mod-files.md) for why).
+Settings are stored per game. If saving fails, the error and retry action remain visible. Complete the save before exiting.
+
+### 310.9 and 310.1
+
+| Build | Multiplier ceiling | Optimization tiers | Preset |
+|---|---|---|---|
+| 310.9 | 6X | 0–3 | Auto / A / B |
+| 310.1 | 4X | 0 / 1 | Auto |
+
+Choose **the build to download** in the top bar, then **the build to use for a game** in its details. These control the local download and game deployment separately. Unsupported settings are explained and block deployment without being changed automatically.
+
+The multiplier is a ceiling; the actual count depends on the game's requests and plugin support. The builds are stored separately: 310.9 in `mod/`, and 310.1 in `mod/variants/310.1/`.
+
+### Updates and batch operations
+
+1. Click “Download / update mod files”, choose a source and wait. **Downloading updates local payload files only; it does not modify games automatically.**
+2. Use “Select updates”, or check the games you want to process.
+3. Review the current search and status filters, then click the batch deploy button. Normal batch operations process **only visible checked games**; hidden selections are counted separately.
+4. Review individual results. “Retry failed items” processes the previous failed games, regardless of whether they are currently visible.
+
+Batch restore also requires selecting games first. Switching builds updates matching owned standby proxies. If a custom standby has no matching file in the new build, restore the game before deploying that build.
+
+## Game guidance
+
+The following setups are recorded by this project. The guidance panel can suggest a game from its name or accept a manual choice, and checks whether related files exist. Presence alone does not verify version compatibility or in-game results.
+
+| Game | Setup notes |
+|---|---|
+| Monster Hunter Wilds | Install the `MHWILDS` package from [REFramework](https://github.com/praydog/REFramework) first. Check `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework/` before deploying the Mod. Avoid overwriting an existing prerequisite proxy. |
+| Zenless Zone Zero | Choose `d3d12.dll` under advanced settings → proxy entry. Recorded cases show other entry names being quarantined by anti-cheat; the anti-cheat warning still requires separate confirmation. |
+| Neverness to Everness | Confirm the render directory is `Client\WindowsNoEditor\HT\Binaries\Win64`. The recorded setup needs `d3d12.dll`, `dinput8.dll` and `dlssg_sm86.ini` together. Prepare the files manually, then use “Adopt manual install”. Redeployment keeps and records standby proxies. |
+
+The manager can adopt recognized manual installations, including community proxies identified by pinned hashes. Other games can be added manually; consult upstream instructions when selecting entry names and settings.
+
+## Restore, data and troubleshooting
+
+Restore checks file ownership: proxy DLLs are identified by the project's signature or a hash in the deployment record; configuration files are recognized using records and project-specific content. Files with unconfirmed ownership are kept. Displaced original configuration files are backed up and restored according to the saved records.
+
+| Data | Location |
+|---|---|
+| Game library, manager log and restore backups | `%APPDATA%\DLSSGManager\` |
+| Mod files | Prefer `mod/` beside the program; if the download location is not writable, use `%APPDATA%\DLSSGManager\mod` |
+| In-game Mod logs | `dlssg_sm86\logs` inside the game's render directory |
+
+Common fixes:
+
+- **Download failed:** try a different source and check the output for the specific error.
+- **Game missing or wrong directory:** add it manually and check the render directory. Use render-directory detection for supported layouts.
+- **Deployment denied or files in use:** close the game first. For directory permission errors, expand Tools and restart as administrator.
+- **No effect or a crash after deployment:** check prerequisites, proxy entry, in-game frame-generation settings and Mod logs. Restore first if needed, then follow upstream troubleshooting instructions.
+- **Return to the original setup:** close the game and restore. Mod logs can optionally be removed at the same time.
+
+Closing during an operation offers to wait for completion; a download can be cancelled before exiting. Keep the library and restore backups so managed installations can be restored later.
+
+## Development and feedback
+
+Building from source requires Windows and the .NET 8 SDK:
+
+```powershell
+dotnet build -c Release
+dotnet run --project test/Harness -c Release -- --self-test
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for building, packaging and contributions, and [HANDOVER.md](docs/HANDOVER.md) for project context.
+
+- Manager scanning, deployment, configuration or UI problems: [open an issue](https://github.com/BUNNY-19C/DLSSG-30s-manager/issues).
+- Frame-generation quality, performance or upstream runtime problems: [upstream issues](https://github.com/sdli1995/dlssg_for_sm86/issues).
+
+> [!NOTE]
+> This project is developed with AI assistance. The maintainer handles hardware testing and releases. Reproducible reports and game test results are welcome.
 
 ## License
 
-The code is [MIT](LICENSE). **MIT covers neither the files dlssg_for_sm86 publishes nor the reference copy under `extra-proxies/`** — those belong to their respective owners, and this project downloads them on demand without redistributing or re-licensing them.
-
-Read the upstream documentation before use, especially the notes on antivirus false positives, VRAM cost and anti-cheat.
-
-## Contributing
-
-Compatibility results and improvements are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). This program is only a **deployment tool** for the mod; issues with frame generation itself (image quality, performance, per-game compatibility) belong with the [mod author](https://github.com/sdli1995/dlssg_for_sm86/issues).
+The manager code uses the [MIT license](LICENSE). Upstream Mod files and reference copies in `extra-proxies/` belong to their respective rights holders and **are not covered by this project's MIT license**. Release executables do not bundle or relicense those files.

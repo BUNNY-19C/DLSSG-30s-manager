@@ -2,61 +2,125 @@
 
 **简体中文** | [English](README.en.md)
 
-[![Release](https://img.shields.io/github/v/release/BUNNY-19C/DLSSG-30s-manager?style=flat-square&label=下载)](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)
+[![Release](https://img.shields.io/github/v/release/BUNNY-19C/DLSSG-30s-manager?style=flat-square&label=最新版本)](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)
 [![License](https://img.shields.io/github/license/BUNNY-19C/DLSSG-30s-manager?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?style=flat-square)](#)
-[![GPU](https://img.shields.io/badge/GPU-RTX%2030%20%E7%B3%BB%20(SM86)-76B900?style=flat-square)](#)
+![Platform](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4?style=flat-square)
+![GPU](https://img.shields.io/badge/GPU-RTX%2030%20Series-76B900?style=flat-square)
 
-> [!NOTE]
-> **本项目由 AI 开发。** 代码、界面文案、文档、测试都由 AI 生成，维护者负责真机实测与发布。文中数字都来自实际运行，但 AI 产出难免有错漏——发现问题请[开 issue](../../issues)。
+为 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) 提供图形化管理：找游戏、按游戏配置帧生成、部署代理 DLL、恢复原文件，并管理本地 Mod 更新。
 
-给 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) 做的图形化管理器：按游戏部署 mod、一键恢复，不用手工往游戏目录里拷 DLL。mod 本身是个 DLL 代理——把代理 DLL 和 `dlssg_sm86.ini` 放到游戏渲染 EXE 旁边，RTX 30 系（SM86）就能用上 DLSS 帧生成。
-
-> [!IMPORTANT]
-> **游戏特有事项**
->
-> - **怪物猎人荒野**必须先装前置 [REFramework](https://github.com/praydog/REFramework)：下载它的 `MHWILDS.zip`，把 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll`、`reframework\` 解压到游戏根目录。不装前置，装上 mod 后游戏必崩（实测）。
-> - **绝区零**要在「代理入口」里选 `d3d12.dll`——`version.dll` 这类名字会被它的反作弊改名隔离。这个 DLL 管理器会自己下载。
-> - **异环**（Neverness to Everness）：游戏目录是 `Client\WindowsNoEditor\HT\Binaries\Win64`，且不自带 DLSS-G 负载。帧生成需要三个文件放在同一目录：`d3d12.dll`、`dinput8.dll`、`dlssg_sm86.ini`（两个代理都要，缺一不可）。v1.9.2 起管理器能扫描识别这个结构，「接管手工安装」即可纳入管理；重新部署会保留全部代理并记录在案，不会再收敛成一个。
+主要面向 **RTX 30 系显卡**，维护者在 RTX 3080 Ti 上进行实测。管理器负责配置与文件操作，帧生成的画质、性能和游戏兼容性取决于上游 Mod、驱动及游戏本身。
 
 ## 下载
 
-到 [Releases](../../releases/latest) 拿，两个文件任选，都不需要装 .NET：`DLSSGManager-*-setup.exe`（安装包，安装路径可选、带卸载）或 `DLSSGManager.exe`（绿色版，单文件）。
+前往 **[最新发行版](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)**，选择一种：
 
-Mod 文件（约 101 MB）不随安装包分发，安装过程也不联网：**首次启动时程序会自动检测上游版本并取回**，之后点「下载 / 更新 Mod 文件」更新。
+| 文件 | 适合的用法 |
+|---|---|
+| `DLSSGManager-版本号-setup.exe` | 安装包，可选安装路径与语言，带卸载程序 |
+| `DLSSGManager.exe` | 绿色版，单文件，放到任意目录运行 |
+| `SHA256SUMS.txt` | 用于核对上述程序文件的 SHA256 |
 
-## 用法
+支持 Windows 10 / 11 x64，**无需另外安装 .NET**。安装过程不联网；Mod 文件单独下载，首次启动时自动获取，也可以点击「下载 / 更新 Mod 文件」手动获取。
 
-1. 「扫描 Steam 库」或「添加游戏…」。程序靠 `nvngx_dlssg.dll` 认游戏，顺带扫一遍反作弊。
-2. 选中游戏并调整配置。「保存配置」只保存到管理器；「部署到该游戏 / 应用到游戏」才写入游戏目录，状态卡会区分未保存、待应用与已应用。
-3. 不想要了点「一键恢复」。批量操作先勾选游戏，仅处理当前可见的勾选项；结果逐项显示，可只重试失败项。
+[v1.10.0 更新说明](docs/RELEASE-NOTES.md) · [Mod 文件与授权说明](docs/mod-files.md)
 
-列表支持名称搜索和状态筛选。常用配置直接显示，代理入口、预设和日志级别在「高级设置」中；工具与运行日志可折叠。游戏详情中的兼容提示可检查荒野、绝区零、异环的目录与前置文件。
+## 第一次使用
+
+1. **关闭要修改的游戏**，启动管理器，等待 Mod 文件下载完成。
+2. 点击「扫描 Steam 库」「扫描文件夹…」或「添加游戏…」，选择游戏。确认渲染目录是实际运行游戏的 EXE 所在位置；部分游戏有单独的目录结构，见下方适配说明。
+3. 在详情中选择运行库构建、帧生成倍率和优化档位。代理入口、预设、日志级别放在「高级设置」中。
+4. 点击「部署到该游戏」，已有部署则点击「应用到游戏」。完成后启动游戏，并在游戏内开启相应的帧生成选项。
+5. 想撤销时关闭游戏，点击「一键恢复」。
+
+顶部状态卡显示当前游戏状态、配置状态、本地负载和游戏已部署版本。名称搜索和状态筛选可组合使用；工具区和运行日志可以展开，日志收起时仍显示最新结果摘要。
 
 > [!WARNING]
-> **带内核级反作弊的游戏有账号风险。** 反作弊可能拦截并隔离代理 DLL，检测记录可能危及账号。程序会检测到并提示风险，是否部署由你决定。
+> **带内核级反作弊的游戏存在账号风险。** 反作弊可能拦截、隔离代理 DLL 或记录检测结果。管理器会检测并提示，部署需要你明确确认；确认提示不代表游戏允许使用此类 Mod。
 
-## 说明
+## 配置、构建与更新
 
-- **入口名**：默认 `version.dll`，另有 `winmm`、`dinput8`、`dbghelp`、`dxgi`、`d3d12` 五个备用。某个名字被别的 mod 占了，程序自动换一个。
-- **配置**按游戏独立保存（启用帧生成、一致性档位 0-3、渲染预设、倍率上限、日志级别），部署时写进 `dlssg_sm86.ini`。
-- **构建**可选 310.9（最高 6X）或 310.1（最高 4X、档位 0/1、Auto 预设）。先在顶部选择要下载的构建，再为游戏选择相同构建；不支持的配置会提示并阻止部署，不会自动改写。
-- **更新**只下载本地文件，不自动覆盖游戏。状态卡分别显示本地与游戏已部署版本；「勾选可更新」后可批量应用。保存记录失败会显示重试入口，操作中关闭窗口会等待收尾，下载可取消后退出。
-- **恢复**只删签名和哈希都对得上的文件；被占用的原文件会先备份到 `%APPDATA%\DLSSGManager\restore\`。
-- **手工装过**的可以被「接管」纳入管理，包括手工放进去的社区版 `d3d12.dll`（按哈希识别）。
-- **显卡**：给 RTX 30 系（作者在 3080 Ti 上实测）；40/50 系原生支持帧生成，用不上。显存会涨，4K 约 +700–770 MiB。
-- **出问题**先看游戏目录里的 `dlssg_sm86\logs`，或点「查看 Mod 日志」。界面支持深色/浅色与中英文切换。
+### 保存配置与应用到游戏
 
-## 从源码
+| 操作或状态 | 含义 |
+|---|---|
+| 保存配置 | 保存到管理器的游戏库，不写入游戏目录 |
+| 部署 / 应用到游戏 | 将代理 DLL 与配置文件写入游戏渲染目录 |
+| 未保存 | 当前配置与管理器已保存的配置不同 |
+| 已保存、待应用 | 管理器已保存配置，游戏尚未应用；旧记录缺少配置快照时也会显示此状态 |
+| 已应用 | 当前配置与上次部署记录一致，修改后需重新应用并重启游戏 |
 
-需要 .NET 8 SDK；构建、测试、打包命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。仓库不含 mod 二进制，首次运行会自动获取（原因见 [docs/mod-files.md](docs/mod-files.md)）。
+配置按游戏独立保存。保存失败会持续显示错误和「重试保存」入口，请先完成保存再退出。
+
+### 310.9 与 310.1
+
+| 构建 | 倍率上限 | 优化档位 | 预设 |
+|---|---|---|---|
+| 310.9 | 6X | 0–3 | Auto / A / B |
+| 310.1 | 4X | 0 / 1 | Auto |
+
+先在顶部选择**要下载的构建**，再在游戏详情中选择**该游戏要使用的构建**。两者分别控制本地下载与游戏部署；不支持的配置会提示并阻止部署，不会自动修改你的设置。
+
+倍率是上限，实际能用到的倍率还取决于游戏请求与插件支持。310.9 与 310.1 分开保存：前者使用 `mod/`，后者使用 `mod/variants/310.1/`。
+
+### 更新和批量操作
+
+1. 点击「下载 / 更新 Mod 文件」，选择下载源，等待完成。**下载只更新本地负载，不自动修改游戏。**
+2. 点击「勾选可更新」，或手动勾选需要处理的游戏。
+3. 确认列表中的搜索和状态筛选，点击「部署所选」。常规批量操作**只处理当前可见且勾选的游戏**，隐藏勾选数量会单独提示。
+4. 查看逐项结果；「重试失败项」仅处理上次失败的游戏，不受当前可见范围限制。
+
+批量恢复同样需要先勾选。切换构建时会同步更新能匹配的自家备用代理；自定义备用代理在新构建里没有对应文件时，会提示先恢复再部署。
+
+## 游戏适配
+
+以下是项目已收录的适配记录。详情里的「游戏适配提示」可按名称建议或手动选择，检查相关文件是否存在；文件存在不代表版本兼容或游戏内效果已经验证。
+
+| 游戏 | 操作要点 |
+|---|---|
+| 怪物猎人荒野 | 先安装 [REFramework](https://github.com/praydog/REFramework) 的 `MHWILDS` 包，检查 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll` 和 `reframework/`，再部署 Mod。已有前置代理不要随意覆盖。 |
+| 绝区零 | 在「高级设置 → 代理入口」中选择 `d3d12.dll`。已收录案例中，其他入口名可能被反作弊隔离；反作弊提示仍需单独确认。 |
+| 异环（Neverness to Everness） | 确认渲染目录为 `Client\WindowsNoEditor\HT\Binaries\Win64`。已收录安装需要 `d3d12.dll`、`dinput8.dll`、`dlssg_sm86.ini` 同时存在；手工准备好后，可通过「接管手工安装」纳入管理。重新部署会保留并记录备用代理。 |
+
+程序也能接管已识别的手工安装，包括按固定哈希识别的社区版代理。未收录游戏可手动添加，并参考上游说明调整入口和配置。
+
+## 恢复、数据与故障处理
+
+恢复会检查文件归属：代理 DLL 通过项目签名或部署记录中的哈希确认，配置文件结合记录和项目特征识别；无法确认归属的文件会保留。被替换的原配置文件会先备份，恢复时按记录还原。
+
+| 数据 | 位置 |
+|---|---|
+| 游戏库、管理器日志与恢复备份 | `%APPDATA%\DLSSGManager\` |
+| Mod 文件 | 优先使用程序旁的 `mod/`；下载目标不可写时使用 `%APPDATA%\DLSSGManager\mod` |
+| 游戏内 Mod 日志 | 游戏渲染目录下的 `dlssg_sm86\logs` |
+
+常见处理方式：
+
+- **下载失败**：换一个下载源重试，查看运行日志中的具体原因。
+- **找不到游戏 / 目录不对**：手动添加游戏，检查渲染目录；支持的游戏结构可用「定位渲染目录」。
+- **无法部署 / 文件被占用**：先关闭游戏；若是目录权限问题，可在顶部工具区选择「以管理员身份重启」。
+- **部署后无效果或崩溃**：检查游戏前置、代理入口、游戏内帧生成设置及 Mod 日志。可先恢复，按上游说明重新排查。
+- **想切回原版**：关闭游戏后执行恢复。恢复时可选择同时删除 Mod 日志。
+
+操作进行中关闭窗口，会提示等待收尾；下载可以取消后退出。请保留游戏库和恢复备份，方便后续恢复已管理的安装。
+
+## 开发与反馈
+
+从源码构建需要 Windows 和 .NET 8 SDK：
+
+```powershell
+dotnet build -c Release
+dotnet run --project test/Harness -c Release -- --self-test
+```
+
+构建、打包与贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)；接手开发见 [HANDOVER.md](docs/HANDOVER.md)。
+
+- 管理器的扫描、部署、配置或界面问题：[提交 Issue](https://github.com/BUNNY-19C/DLSSG-30s-manager/issues)。
+- 帧生成的画质、性能或上游运行时问题：[上游 Issue](https://github.com/sdli1995/dlssg_for_sm86/issues)。
+
+> [!NOTE]
+> 本项目由 AI 辅助开发，维护者负责真机测试与发布。欢迎提交可复现问题和游戏实测结果。
 
 ## 授权
 
-代码是 [MIT](LICENSE)。**MIT 不覆盖 dlssg_for_sm86 发布的任何文件**，也不覆盖 `extra-proxies/` 下的参考副本——那些属于各自的权利人，本项目只按需下载，不转发、不再授权。
-
-使用前请读上游说明，尤其是杀软误报、显存占用和反作弊相关的限制。
-
-## 参与
-
-欢迎提交实测结果和改进，见 [CONTRIBUTING.md](CONTRIBUTING.md)。本程序只是 mod 的**部署工具**，帧生成本身的问题（画质、性能、兼容性）请找 [mod 作者](https://github.com/sdli1995/dlssg_for_sm86/issues)。
+管理器代码使用 [MIT 许可证](LICENSE)。上游 Mod 文件及 `extra-proxies/` 中的参考副本属于各自权利人，**不在本项目 MIT 授权范围内**；发行程序不捆绑或转授权这些文件。
