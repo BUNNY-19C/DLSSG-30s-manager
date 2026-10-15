@@ -1,12 +1,14 @@
 using System.IO;
 using System.Windows;
+using DLSSGManager.ViewModels;
 
 namespace DLSSGManager;
 
 /// <summary>
 /// Anti-cheat warnings raised at the moment a folder is attached to a game, rather than only when a
 /// deploy is attempted. A user adding a protected game should learn immediately that the mod cannot
-/// work there, not after they have copied files into it.
+/// work there, not after they have copied files into it. The banner for the selected game is
+/// <see cref="Protection"/>.
 /// </summary>
 public partial class MainWindow
 {
@@ -91,15 +93,10 @@ public partial class MainWindow
     /// </summary>
     private void WarnAboutProtected(List<GameEntry> newlyAdded)
     {
-        var blocked = newlyAdded.Where(g => g.HasKernelAntiCheat).ToList();
-        if (blocked.Count == 0) return;
+        if (ProtectionViewModel.BatchNotice(newlyAdded) is not { } notice) return;
 
-        var lines = string.Join("\n", blocked.Select(g => $"· {g.Name} — {g.Protection!.Products}"));
-        var body = Loc.T("Anti.BatchBody", blocked.Count, lines);
-
-        _log.Write(Loc.T("Anti.BatchLog", blocked.Count, Loc.Join(blocked.Select(g => g.Name))));
-
-        MessageBox.Show(this, body, Loc.T("Anti.BatchTitle"),
+        _log.Write(notice.LogLine);
+        MessageBox.Show(this, notice.Body, Loc.T("Anti.BatchTitle"),
             MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 }

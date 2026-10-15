@@ -72,10 +72,23 @@ public static class ThemeKeys
     public const string StatusBadBrush = "StatusBadBrush";
     public const string StatusIdleBrush = "StatusIdleBrush";
 
+    /// <summary>Stored preference meaning "use whatever Windows uses for apps".</summary>
+    public const string SystemPreference = "system";
+
     /// <summary>Parses a stored theme name; anything unrecognised falls back to dark.</summary>
     public static AppTheme Parse(string? stored) =>
         string.Equals(stored, "light", StringComparison.OrdinalIgnoreCase) ? AppTheme.Light : AppTheme.Dark;
 
     /// <summary>The value written to the library file, matching <see cref="Parse"/>.</summary>
     public static string StorageValue(AppTheme theme) => theme == AppTheme.Light ? "light" : "dark";
+
+    /// <summary>A stored preference in canonical form: "system", "dark" or "light".</summary>
+    public static string NormalizePreference(string? stored) =>
+        string.Equals(stored, SystemPreference, StringComparison.OrdinalIgnoreCase) ? SystemPreference : StorageValue(Parse(stored));
+
+    /// <summary>The theme a preference stands for, given what Windows currently uses for apps.</summary>
+    public static AppTheme Resolve(string? preference, bool systemUsesLight) =>
+        NormalizePreference(preference) == SystemPreference
+            ? systemUsesLight ? AppTheme.Light : AppTheme.Dark
+            : Parse(preference);
 }

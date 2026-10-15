@@ -6,18 +6,48 @@ namespace DLSSGManager;
 /// <summary>Configuration snapshots contain values, not file hashes or runtime status.</summary>
 public static class ConfigurationState
 {
-    public static string Applied(GameEntry game) => JsonSerializer.Serialize(new
-    {
-        game.RenderDir, game.PreferredProxy, game.Profile,
-    });
+    public static string Applied(GameEntry game) => Snapshot(game.RenderDir, game.PreferredProxy, game.Profile);
 
     public static string Saved(GameEntry game) => JsonSerializer.Serialize(new
     {
         game.Name, game.ExePath, game.CompatibilityId, Configuration = Applied(game),
     });
 
-    public static bool NeedsApply(GameEntry game) => game.Deployment is null ||
-        game.Deployment.AppliedConfiguration != Applied(game);
+    public static bool NeedsApply(GameEntry game)
+    {
+        var recorded = game.Deployment?.AppliedConfiguration;
+        if (string.IsNullOrEmpty(recorded)) return true;
+        var current = Applied(game);
+        return recorded != current && Reread(recorded) != current;
+    }
+
+    private static string Snapshot(string renderDir, string preferredProxy, GameProfile profile) =>
+        JsonSerializer.Serialize(new { RenderDir = renderDir, PreferredProxy = preferredProxy, Profile = profile });
+
+    /// <summary>
+    /// A snapshot recorded before a setting existed has no value for it. Read back through today's types
+    /// the setting takes its default, so adding one does not mark every deployed game as changed: the
+    /// deployed INI never set it either, and the defaults follow upstream's.
+    /// </summary>
+    private static string? Reread(string recorded)
+    {
+        try
+        {
+            var old = JsonSerializer.Deserialize<Recorded>(recorded);
+            return old is null ? null : Snapshot(old.RenderDir, old.PreferredProxy, old.Profile);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed class Recorded
+    {
+        public string RenderDir { get; set; } = "";
+        public string PreferredProxy { get; set; } = "";
+        public GameProfile Profile { get; set; } = new();
+    }
 }
 
 public static class BuildCatalog

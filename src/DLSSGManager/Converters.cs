@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
@@ -43,17 +44,43 @@ public sealed class ThemeBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-/// <summary>A combo entry pairing a stable value with the label shown in the dropdown.</summary>
-public sealed record Choice(int Value, string Text)
-{
-    public override string ToString() => Text;
-}
-
 /// <summary>
-/// The same pairing for string values, used by the language picker where the value is a language code
-/// rather than a number. Kept separate so the numeric combos keep their compile-time type.
+/// A combo entry pairing a stable value with its label.
+///
+/// A label given as a string-table key follows the interface language in place. The closed box of a
+/// combo shows the selected item itself, so an entry whose text notifies repaints there as well.
+/// Rebuilding the items instead would clear and re-set the selection, pushing a transient null
+/// through every TwoWay binding on SelectedValue.
 /// </summary>
-public sealed record TextChoice(string Value, string Text)
+public sealed class Choice<T> : INotifyPropertyChanged
 {
+    private static readonly PropertyChangedEventArgs TextChanged = new(nameof(Text));
+
+    private readonly string? _key;
+    private readonly string _fixedText;
+
+    private Choice(T value, string? key, string fixedText)
+    {
+        Value = value;
+        _key = key;
+        _fixedText = fixedText;
+
+        // Weak: an entry must not be kept alive by the application-wide string source.
+        if (key is not null) PropertyChangedEventManager.AddHandler(Loc.Instance, OnLanguageChanged, string.Empty);
+    }
+
+    public static Choice<T> Localized(T value, string key) => new(value, key, "");
+
+    /// <summary>A label that is the same in every language, such as a language's own name.</summary>
+    public static Choice<T> Fixed(T value, string text) => new(value, null, text);
+
+    public T Value { get; }
+
+    public string Text => _key is null ? _fixedText : Loc.T(_key);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public override string ToString() => Text;
+
+    private void OnLanguageChanged(object? sender, PropertyChangedEventArgs e) => PropertyChanged?.Invoke(this, TextChanged);
 }

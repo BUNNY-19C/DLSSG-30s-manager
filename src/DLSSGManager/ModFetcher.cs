@@ -4,9 +4,23 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography.X509Certificates;
 
 namespace DLSSGManager;
+
+/// <summary>Which payload a download should produce.</summary>
+public enum PayloadPackage
+{
+    /// <summary>The full package first, the frame-generation files as the fallback (first run, command line).</summary>
+    Any,
+
+    /// <summary>The release archive, including the INT8 super-resolution kernels.</summary>
+    Full,
+
+    /// <summary>Frame generation and XeSS only, fetched file by file from the repository.</summary>
+    Base,
+}
 
 /// <summary>
 /// Obtains the dlssg_for_sm86 payload from any of several mirrors.
@@ -45,7 +59,21 @@ public static class ModFetcher
         "cdn.jsdelivr.net",
         "gh-proxy.com",
         "ghfast.top",
+        "downloads.sourceforge.net",
     };
+
+    /// <summary>
+    /// Host families accepted by suffix. SourceForge's redirector hands each request to one of its
+    /// regional mirrors (<c>master.dl.sourceforge.net</c>, <c>netix.dl.sourceforge.net</c>, …), so the
+    /// final host cannot be listed in advance. The match is on a whole-label boundary.
+    /// </summary>
+    private static readonly string[] AllowedHostSuffixes = { ".dl.sourceforge.net" };
+
+    private static bool IsAllowedHost(Uri uri) =>
+        uri.HostNameType == UriHostNameType.Dns &&
+        (AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase) ||
+         AllowedHostSuffixes.Any(suffix => uri.Host.Length > suffix.Length &&
+                                           uri.Host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>
     /// Certificate the project signs every proxy DLL with, as 0.3.0 publishes it in its own README:
@@ -63,6 +91,31 @@ public static class ModFetcher
     private const string ExpectedSignerSubject = "DLSSG";
 
     private const long MaxArchiveBytes = 256L * 1024 * 1024;
+
+    /// <summary>
+    /// Ceiling on what an archive may expand to, counted from the bytes actually decompressed. The
+    /// full 0.4.0 package expands to a few hundred MB; a zip bomb would not stop there.
+    /// </summary>
+    private const long MaxExtractedBytes = 1024L * 1024 * 1024;
+
+    private const int MaxArchiveEntries = 4096;
+
+    /// <summary>A source that sends nothing for this long is abandoned, so the next one gets its turn.</summary>
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>How many times one file is continued from where a dropped connection left it.</summary>
+    private const int MaxResumes = 3;
+
+    /// <summary>
+    /// Speed-test sample: a ranged read of this many bytes, bounded by <see cref="ProbeTimeout"/>.
+    /// Enough to get past connection setup, small enough that testing every source costs a few MB.
+    /// </summary>
+    private const int ProbeBytes = 512 * 1024;
+
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(6);
+
+    /// <summary>File a per-file source is timed with: large, and present in every release of the layout.</summary>
+    private const string ProbeFile = "dlssg_sm86/kernels/fg_kernels.dll";
 
     private const string RepoPath = "sdli1995/dlssg_for_sm86";
     public const string SupportedRelease = "0.4.0";
@@ -135,6 +188,9 @@ public static class ModFetcher
     private sealed record Source(string Id, string NameKey, bool Official, string UrlTemplate, bool IsArchive)
     {
         public string Name => Loc.T(NameKey);
+
+        /// <summary>Archives are the release attachment; per-file sources read the repository, which has no SR files.</summary>
+        public PayloadPackage Package => IsArchive ? PayloadPackage.Full : PayloadPackage.Base;
     }
 
     /// <summary>
@@ -225,6 +281,10 @@ public static class ModFetcher
             "https://github.com/{repo}/releases/download/{ref}/dlssg-release-{ref}-x64.zip", true),
         new("release-proxy", "Fetch.SourceReleaseProxy", false,
             "https://ghfast.top/https://github.com/{repo}/releases/download/{ref}/dlssg-release-{ref}-x64.zip", true),
+        // SourceForge's automatic mirror of the repository's releases (project "dlssg-for-sm86.mirror"):
+        // the same attachment, served from its own CDN. A mirror, so the certificate pin is enforced.
+        new("sourceforge", "Fetch.SourceSourceForge", false,
+            "https://downloads.sourceforge.net/project/dlssg-for-sm86.mirror/{ref}/dlssg-release-{ref}-x64.zip", true),
         // Templates carry {repo}/{ref}/{path} rather than a baked-in repository, so the list can serve
         // more than one repository without duplicating every endpoint.
         //
@@ -261,15 +321,100 @@ public static class ModFetcher
     /// <summary>
     /// A source as presented to the user: a stable id to pass back, plus text in the active language.
     /// </summary>
-    public sealed record SourceOption(string Id, string Name, string Note, bool Official);
+    public sealed record SourceOption(string Id, string Name, string Note, bool Official, PayloadPackage Package);
 
     /// <summary>
     /// The sources a user may choose from, in the order they would be tried. Notes explain what each
     /// one is for, since the difference between them is not obvious from the name.
     /// </summary>
     public static IReadOnlyList<SourceOption> AvailableSources => Sources
-        .Select(s => new SourceOption(s.Id, s.Name, Loc.T($"Fetch.Note.{s.Id}"), s.Official))
+        .Select(s => new SourceOption(s.Id, s.Name, Loc.T($"Fetch.Note.{s.Id}"), s.Official, s.Package))
         .ToArray();
+
+    /// <summary>The sources able to deliver <paramref name="package"/>, in their usual order.</summary>
+    private static IReadOnlyList<Source> SourcesFor(PayloadPackage package) =>
+        package == PayloadPackage.Any ? Sources : Sources.Where(s => s.Package == package).ToArray();
+
+    /// <summary>
+    /// Times every source able to deliver <paramref name="package"/>, all at once: a ranged read of
+    /// the release archive, or of one large payload file for per-file sources. Never throws for a
+    /// source that fails; the result says so instead.
+    /// </summary>
+    public static async Task<IReadOnlyList<SourceProbe>> ProbeSourcesAsync(PayloadPackage package, CancellationToken ct) =>
+        await Task.WhenAll(SourcesFor(package).Select(s => ProbeAsync(s, ct))).ConfigureAwait(false);
+
+    private static async Task<SourceProbe> ProbeAsync(Source source, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(ProbeTimeout);
+
+        var url = new Uri(UrlFor(source, RepoPath, RepoRef, source.IsArchive ? null : ProbeFile));
+        var watch = Stopwatch.StartNew();
+        var latency = TimeSpan.Zero;
+
+        try
+        {
+            using var client = CreateClient();
+            using var response = await GetCheckedAsync(client, url, timeout.Token, 0, ProbeBytes - 1).ConfigureAwait(false);
+            latency = watch.Elapsed;
+            var total = TotalLength(response) ?? -1;
+
+            await using var input = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+            var buffer = new byte[16 * 1024];
+            long read = 0;
+            try
+            {
+                int n;
+                while (read < ProbeBytes && (n = await input.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
+                    read += n;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && read > 0)
+            {
+                // Out of time mid-sample: what did arrive still measures the rate.
+            }
+
+            var seconds = Math.Max((watch.Elapsed - latency).TotalSeconds, 0.001);
+            return new SourceProbe(source.Id, true, read / seconds, latency, total, "");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new SourceProbe(source.Id, false, 0, latency, -1, Loc.T("Fetch.ProbeTimeout", (int)ProbeTimeout.TotalSeconds));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new SourceProbe(source.Id, false, 0, latency, -1, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Orders source ids for automatic mode: sources that answered their speed test, fastest first,
+    /// then the rest in their usual order. A failed probe does not drop a source — the probe is one
+    /// short sample, and the full download may well get through where it did not.
+    /// </summary>
+    public static IReadOnlyList<string> RankSourceIds(IReadOnlyList<string> usualOrder, IReadOnlyList<SourceProbe> probes)
+    {
+        var byId = new Dictionary<string, SourceProbe>(StringComparer.OrdinalIgnoreCase);
+        foreach (var probe in probes) byId.TryAdd(probe.SourceId, probe);
+
+        return usualOrder
+            .Select((id, index) => (Id: id, Index: index, Probe: byId.GetValueOrDefault(id)))
+            .OrderBy(x => x.Probe is { Reachable: true } ? 0 : 1)
+            .ThenByDescending(x => x.Probe is { Reachable: true } p ? p.BytesPerSecond : 0)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Id)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Ranks within each package, the full package first, so automatic mode never settles for the
+    /// frame-generation files while the full package is reachable.
+    /// </summary>
+    private static IReadOnlyList<Source> Rank(IReadOnlyList<Source> sources, IReadOnlyList<SourceProbe> probes) =>
+        sources.GroupBy(s => s.Package)
+            .OrderBy(g => g.Key == PayloadPackage.Full ? 0 : 1)
+            .SelectMany(g => RankSourceIds(g.Select(s => s.Id).ToArray(), probes)
+                .Select(id => g.First(s => s.Id == id)))
+            .ToArray();
 
     /// <summary>Id used to mean "try every source in turn"; see <see cref="DownloadIntoAsync"/>.</summary>
     public const string AutoSourceId = "auto";
@@ -287,7 +432,7 @@ public static class ModFetcher
     /// the user did not pick. Otherwise <see cref="SourceFilterVariable"/> may narrow it for
     /// diagnostics, and failing that every source is tried in turn.
     /// </summary>
-    private static IReadOnlyList<Source> ActiveSources(string? sourceId = null)
+    private static IReadOnlyList<Source> ActiveSources(string? sourceId, PayloadPackage package)
     {
         if (!string.IsNullOrWhiteSpace(sourceId) &&
             !string.Equals(sourceId, AutoSourceId, StringComparison.OrdinalIgnoreCase))
@@ -299,15 +444,16 @@ public static class ModFetcher
                 string.Join(" | ", Sources.Select(s => s.Id))));
         }
 
+        var candidates = SourcesFor(package);
         var filter = Environment.GetEnvironmentVariable(SourceFilterVariable);
-        if (string.IsNullOrWhiteSpace(filter)) return Sources;
+        if (string.IsNullOrWhiteSpace(filter)) return candidates;
 
-        var matched = Sources.Where(s => s.Id.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        var matched = candidates.Where(s => s.Id.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         if (matched.Count == 0)
         {
             AppPaths.Log(Loc.T("Fetch.UnknownFilter", filter,
-                string.Join(" | ", Sources.Select(s => s.Id))));
-            return Sources;
+                string.Join(" | ", candidates.Select(s => s.Id))));
+            return candidates;
         }
 
         return matched;
@@ -333,7 +479,7 @@ public static class ModFetcher
     public static bool IsAllowedAddress(Uri uri, bool proxyRouted)
     {
         if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
-        if (!AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase)) return false;
+        if (!IsAllowedHost(uri)) return false;
 
         if (proxyRouted) return true;
 
@@ -412,15 +558,21 @@ public static class ModFetcher
         return client;
     }
 
-    /// <summary>Follows at most a handful of hops, re-validating every target.</summary>
-    private static async Task<HttpResponseMessage> GetCheckedAsync(HttpClient client, Uri uri, CancellationToken ct)
+    /// <summary>
+    /// Follows at most a handful of hops, re-validating every target. A range, when given, is sent
+    /// on every hop: the redirect target is where the bytes come from.
+    /// </summary>
+    private static async Task<HttpResponseMessage> GetCheckedAsync(HttpClient client, Uri uri, CancellationToken ct,
+        long? rangeFrom = null, long? rangeTo = null)
     {
         if (!IsAllowedAddress(uri)) throw new InvalidOperationException(Loc.T("Fetch.UrlRejected", uri));
 
         var current = uri;
         for (var hop = 0; hop < 5; hop++)
         {
-            var response = await client.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            if (rangeFrom is not null) request.Headers.Range = new RangeHeaderValue(rangeFrom, rangeTo);
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if ((int)response.StatusCode is >= 300 and < 400)
             {
                 var location = response.Headers.Location;
@@ -446,25 +598,213 @@ public static class ModFetcher
         throw new InvalidOperationException(Loc.T("Fetch.RedirectTooMany"));
     }
 
+    /// <summary>Size of the whole file: from Content-Range for a partial answer, Content-Length otherwise.</summary>
+    private static long? TotalLength(HttpResponseMessage response) =>
+        response.StatusCode == HttpStatusCode.PartialContent
+            ? response.Content.Headers.ContentRange?.Length
+            : response.Content.Headers.ContentLength;
+
+    /// <summary>
+    /// Streams one address into a file. Nothing arriving for <see cref="StallTimeout"/> fails the
+    /// transfer, so a source that has gone quiet hands over to the next one. A connection dropped
+    /// part-way — including during a long pause — is continued with a ranged request from the byte it
+    /// reached, up to <see cref="MaxResumes"/> times; a server that ignores the range is read again
+    /// from the start rather than spliced.
+    /// </summary>
+    /// <param name="report">Bytes written, total size (-1 when unknown), smoothed rate.</param>
+    /// <returns>The number of bytes written.</returns>
+    private static async Task<long> TransferAsync(HttpClient client, Uri url, string target, long maxBytes,
+        Action<long, long, double>? report, DownloadGate? gate, CancellationToken ct)
+    {
+        long written = 0;
+        long total = -1;
+        var resumes = 0;
+        var meter = new SpeedMeter();
+        var buffer = new byte[81920];
+
+        await using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
+        while (true)
+        {
+            using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            try
+            {
+                stall.CancelAfter(StallTimeout);
+                using var response = await GetCheckedAsync(client, url, stall.Token, written > 0 ? written : null)
+                    .ConfigureAwait(false);
+
+                if (written > 0)
+                {
+                    var range = response.Content.Headers.ContentRange;
+                    if (response.StatusCode != HttpStatusCode.PartialContent)
+                    {
+                        written = 0;
+                        output.SetLength(0);
+                        output.Position = 0;
+                    }
+                    else if (range?.From != written)
+                    {
+                        throw new InvalidOperationException(Loc.T("Fetch.RangeMismatch", url.Host));
+                    }
+                }
+
+                total = TotalLength(response) ?? total;
+                if (total > maxBytes) throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge", total / 1024 / 1024));
+
+                await using var input = await response.Content.ReadAsStreamAsync(stall.Token).ConfigureAwait(false);
+                var lastReport = Stopwatch.GetTimestamp();
+                while (true)
+                {
+                    if (gate?.Paused == true)
+                    {
+                        stall.CancelAfter(Timeout.InfiniteTimeSpan);
+                        report?.Invoke(written, total, 0);
+                        await gate.WaitAsync(ct).ConfigureAwait(false);
+                        stall.CancelAfter(StallTimeout);
+                    }
+
+                    var read = await input.ReadAsync(buffer, stall.Token).ConfigureAwait(false);
+                    if (read == 0) break;
+                    stall.CancelAfter(StallTimeout);
+
+                    written += read;
+                    if (written > maxBytes) throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge2"));
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+
+                    if (report is not null && Stopwatch.GetElapsedTime(lastReport).TotalMilliseconds >= 150)
+                    {
+                        lastReport = Stopwatch.GetTimestamp();
+                        report(written, total, meter.Report(written));
+                    }
+                }
+
+                // A connection closed early ends the read like a finished one; only the length tells them apart.
+                if (total > 0 && written < total) throw new IOException(Loc.T("Fetch.Truncated", written, total));
+
+                report?.Invoke(written, total > 0 ? total : written, meter.Report(written));
+                return written;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && stall.IsCancellationRequested)
+            {
+                throw new TimeoutException(Loc.T("Fetch.Stalled", url.Host, (int)StallTimeout.TotalSeconds));
+            }
+            catch (Exception ex) when (ex is IOException or HttpRequestException &&
+                                       !ct.IsCancellationRequested && written > 0 && resumes < MaxResumes)
+            {
+                resumes++;
+                AppPaths.Log(Loc.T("Fetch.Resuming", url.Host, written, ex.Message));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Expands an archive into <paramref name="staging"/>. Entries that would land outside it are
+    /// refused, and extraction stops once the bytes actually decompressed pass
+    /// <see cref="MaxExtractedBytes"/>, whatever sizes the archive declares. A single folder wrapping
+    /// the payload (a zipped folder, a source archive) is flattened so staging looks like the payload root.
+    /// </summary>
+    private static void ExtractArchive(string archivePath, string staging, CancellationToken ct)
+    {
+        Directory.CreateDirectory(staging);
+        var root = Path.GetFullPath(staging).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+        using var zip = ZipFile.OpenRead(archivePath);
+        if (zip.Entries.Count > MaxArchiveEntries)
+            throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooManyEntries", MaxArchiveEntries));
+
+        long extracted = 0;
+        var buffer = new byte[81920];
+        foreach (var entry in zip.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // A colon would address an alternate data stream; nothing in a payload needs one.
+            if (entry.FullName.Contains(':')) throw new InvalidOperationException(Loc.T("Fetch.EscapeAttempt"));
+            var target = Path.GetFullPath(Path.Combine(root, entry.FullName));
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(Loc.T("Fetch.EscapeAttempt"));
+
+            if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'))
+            {
+                Directory.CreateDirectory(target);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            using var input = entry.Open();
+            using var output = File.Create(target);
+            int read;
+            while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                extracted += read;
+                if (extracted > MaxExtractedBytes)
+                    throw new InvalidOperationException(Loc.T("Fetch.ExtractTooLarge", MaxExtractedBytes / 1024 / 1024));
+                output.Write(buffer, 0, read);
+            }
+        }
+
+        FlattenWrapper(staging);
+    }
+
+    /// <summary>
+    /// Lifts the payload out of the one folder that wraps it. Folders without the INI — such as the
+    /// <c>__MACOSX</c> metadata macOS adds to a zip — are not candidates.
+    /// </summary>
+    private static void FlattenWrapper(string staging)
+    {
+        if (File.Exists(Path.Combine(staging, ModSource.IniName))) return;
+
+        var wrappers = Directory.GetDirectories(staging)
+            .Where(d => File.Exists(Path.Combine(d, ModSource.IniName)))
+            .ToArray();
+        if (wrappers.Length != 1) throw new InvalidOperationException(Loc.T("Fetch.BadArchive"));
+
+        var inner = wrappers[0];
+        foreach (var entry in Directory.EnumerateFileSystemEntries(inner))
+        {
+            var target = Path.Combine(staging, Path.GetFileName(entry));
+            if (Directory.Exists(entry))
+            {
+                if (Directory.Exists(target)) throw new InvalidOperationException(Loc.T("Fetch.BadArchive"));
+                Directory.Move(entry, target);
+            }
+            else File.Move(entry, target, overwrite: true);
+        }
+
+        TryDeleteDirectory(inner);
+    }
+
     /// <summary>
     /// A byte-level progress tick for the interface: which source, which file of the payload, how
     /// far through it, and the smoothed transfer rate. <see cref="BytesTotal"/> is -1 when the
     /// endpoint did not declare a length, so the bar can go indeterminate.
     /// </summary>
     public sealed record FetchProgress(string SourceName, int FileIndex, int FileTotal,
-                                       long BytesDone, long BytesTotal, double SpeedBps);
+                                       long BytesDone, long BytesTotal, double SpeedBps,
+                                       FetchPhase Phase = FetchPhase.Downloading);
+
+    /// <summary>What a download is doing; anything past <see cref="Downloading"/> has no byte count.</summary>
+    public enum FetchPhase
+    {
+        Probing,
+        Downloading,
+        Extracting,
+        Verifying,
+    }
 
     /// <summary>
-    /// A pause switch for a running download. The fetch loops call <see cref="Wait"/> at file
-    /// boundaries: pausing takes effect once the current file finishes, which keeps an HTTP
-    /// connection from idling out on a long pause. Cancellation is separate and immediate — that is
-    /// the escape hatch when a source is too slow to finish even one file.
+    /// Pause and skip switches for a running download.
+    ///
+    /// Pausing stops reading inside the transfer loop. The connection is left open; if the server
+    /// drops it during a long pause, the transfer continues with a ranged request from the byte it
+    /// reached. Skipping abandons only the source in use, so automatic mode moves on to the next one.
+    /// Cancellation stays with the caller's token and is immediate.
     /// </summary>
     public sealed class DownloadGate
     {
-        private readonly ManualResetEventSlim _resume = new(initialState: true);
         private readonly object _sync = new();
-        private volatile bool _paused;
+        private TaskCompletionSource _resumed = Released();
+        private CancellationTokenSource? _attempt;
+        private bool _paused;
 
         public bool Paused
         {
@@ -477,23 +817,74 @@ public static class ModFetcher
             {
                 if (_paused) return;
                 _paused = true;
-                _resume.Reset();
+                _resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             }
         }
 
         public void Resume()
         {
+            TaskCompletionSource released;
             lock (_sync)
             {
                 if (!_paused) return;
                 _paused = false;
-                _resume.Set();
+                released = _resumed;
+            }
+            released.TrySetResult();
+        }
+
+        /// <summary>Gives up on the source being used. Also releases a pause, so the next source starts at once.</summary>
+        public void SkipCurrentSource()
+        {
+            CancellationTokenSource? attempt;
+            lock (_sync) attempt = _attempt;
+            try { attempt?.Cancel(); }
+            catch (ObjectDisposedException) { /* the attempt finished in the meantime */ }
+            Resume();
+        }
+
+        /// <summary>Completes at once while running; waits while paused.</summary>
+        public Task WaitAsync(CancellationToken ct)
+        {
+            Task resumed;
+            lock (_sync) resumed = _resumed.Task;
+            return resumed.IsCompleted ? Task.CompletedTask : resumed.WaitAsync(ct);
+        }
+
+        /// <summary>A token for one source attempt: cancelled by the caller's token or by <see cref="SkipCurrentSource"/>.</summary>
+        internal CancellationToken BeginAttempt(CancellationToken outer)
+        {
+            lock (_sync)
+            {
+                _attempt?.Dispose();
+                _attempt = CancellationTokenSource.CreateLinkedTokenSource(outer);
+                return _attempt.Token;
             }
         }
 
-        /// <summary>Returns immediately while running; blocks while paused; throws when cancelled.</summary>
-        public void Wait(CancellationToken ct) => _resume.Wait(ct);
+        internal void EndAttempt()
+        {
+            lock (_sync)
+            {
+                _attempt?.Dispose();
+                _attempt = null;
+            }
+        }
+
+        private static TaskCompletionSource Released()
+        {
+            var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            released.SetResult();
+            return released;
+        }
     }
+
+    /// <summary>
+    /// One source's speed test: whether it answered, how fast the sample arrived, and how large the
+    /// probed file is (the whole package for archive sources, -1 when the server did not say).
+    /// </summary>
+    public sealed record SourceProbe(string SourceId, bool Reachable, double BytesPerSecond, TimeSpan Latency,
+                                     long TotalBytes, string Error);
 
     /// <summary>
     /// Tracks a transfer rate over a half-second window, smoothed so the read-loop bursts do not make
@@ -522,12 +913,15 @@ public static class ModFetcher
     }
 
     /// <summary>Formats a transfer rate for display, e.g. "12.3 MB/s".</summary>
-    public static string FormatSpeed(double bytesPerSecond)
-    {
-        if (bytesPerSecond <= 0) return "0 B/s";
+    public static string FormatSpeed(double bytesPerSecond) => FormatSize(bytesPerSecond) + "/s";
 
-        string[] units = { "B/s", "KB/s", "MB/s", "GB/s" };
-        var value = bytesPerSecond;
+    /// <summary>Formats a byte count for display, e.g. "76.8 MB".</summary>
+    public static string FormatSize(double bytes)
+    {
+        if (bytes <= 0) return "0 B";
+
+        string[] units = { "B", "KB", "MB", "GB" };
+        var value = bytes;
         var unit = 0;
         while (value >= 1024 && unit < units.Length - 1)
         {
@@ -543,27 +937,29 @@ public static class ModFetcher
     /// <summary>
     /// Downloads the payload.
     ///
-    /// With <paramref name="sourceId"/> null or <see cref="AutoSourceId"/>, each source is tried in
-    /// turn until one yields a verified result. With a specific id, only that source is used: the user
-    /// chose it deliberately, and silently downloading from elsewhere would misreport where the files
-    /// came from and defeat the point of choosing.
+    /// With <paramref name="sourceId"/> null or <see cref="AutoSourceId"/>, the sources for the package
+    /// are speed-tested and tried fastest first until one yields a verified result; a source that
+    /// fails, stalls or is skipped hands over to the next. With a specific id, only that source is
+    /// used: the user chose it deliberately, and silently downloading from elsewhere would misreport
+    /// where the files came from and defeat the point of choosing.
     /// </summary>
-    /// <param name="versionLabel">
-    /// What <see cref="DetectLatestVersionAsync"/> reported before the download, recorded beside the
-    /// payload so the interface can name the installed release. Optional: a download must not depend on
-    /// the probe having succeeded.
-    /// </param>
     /// <param name="byteProgress">Per-chunk transfer progress for the interface; may be null.</param>
-    /// <param name="gate">Pause switch; may be null (never pauses).</param>
+    /// <param name="gate">Pause and skip switches; may be null (never pauses).</param>
+    /// <param name="package">Which payload to fetch; decides which sources take part.</param>
+    /// <param name="probes">
+    /// Speed tests already run (the picker runs them while the user decides). In automatic mode without
+    /// them, the sources are tested here first, which costs at most <see cref="ProbeTimeout"/>.
+    /// </param>
     public static async Task<OpResult> DownloadIntoAsync(
         string destination,
         IProgress<string>? progress,
         CancellationToken ct,
         string? sourceId = null,
-        string? versionLabel = null,
         IProgress<FetchProgress>? byteProgress = null,
         DownloadGate? gate = null,
-        string runtimeModel = BuildCatalog.Default)
+        string runtimeModel = BuildCatalog.Default,
+        PayloadPackage package = PayloadPackage.Any,
+        IReadOnlyList<SourceProbe>? probes = null)
     {
         ct.ThrowIfCancellationRequested();
         if (BuildCatalog.Normalize(runtimeModel) != BuildCatalog.Default)
@@ -572,8 +968,21 @@ public static class ModFetcher
             unavailable.Fail(Loc.T("Manage.RetiredBuild"));
             return unavailable;
         }
-        var sources = ActiveSources(sourceId);
+        var sources = ActiveSources(sourceId, package);
         var singleSource = sources.Count == 1 && IsExplicitChoice(sourceId);
+
+        if (!singleSource && sources.Count > 1)
+        {
+            if (probes is null)
+            {
+                progress?.Report(Loc.T("Fetch.Probing"));
+                byteProgress?.Report(new FetchProgress("", 0, 0, 0, -1, 0, FetchPhase.Probing));
+                probes = await ProbeSourcesAsync(package, ct).ConfigureAwait(false);
+                foreach (var probe in probes) AppPaths.Log(DescribeProbe(probe));
+            }
+            sources = Rank(sources, probes);
+            progress?.Report(Loc.T("Fetch.ProbeOrder", string.Join(" → ", sources.Select(s => s.Name))));
+        }
 
         // GitHub's endpoints reset connections fairly often on some networks (observed ~25% of
         // attempts here), so a transient failure is retried before giving up or moving on.
@@ -582,12 +991,9 @@ public static class ModFetcher
 
         foreach (var source in sources)
         {
-            gate?.Wait(ct);
-            ct.ThrowIfCancellationRequested();
-
             for (var attempt = 1; attempt <= attemptsPerSource; attempt++)
             {
-                gate?.Wait(ct);
+                await (gate?.WaitAsync(ct) ?? Task.CompletedTask).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
 
                 progress?.Report(attempt > 1 ? Loc.T("Fetch.Retrying", source.Name, attempt) : Loc.T("Fetch.Starting", source.Name));
@@ -595,12 +1001,35 @@ public static class ModFetcher
                 if (attempt > 1)
                     await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
 
-                var result = await AttemptAsync(source, destination, progress, ct, versionLabel, byteProgress, gate, runtimeModel)
-                    .ConfigureAwait(false);
+                var attemptCt = gate?.BeginAttempt(ct) ?? ct;
+                OpResult result;
+                var skipped = false;
+                try
+                {
+                    result = await AttemptAsync(source, destination, progress, attemptCt, byteProgress, gate, runtimeModel)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Not the caller's cancellation: the user skipped this source, or the HTTP client
+                    // gave up on it. Either way it is finished; a skipped one is not retried.
+                    skipped = attemptCt.IsCancellationRequested;
+                    result = new OpResult();
+                    result.Fail(Loc.T(skipped ? "Fetch.SkippedByUser" : "Fetch.TimedOut"));
+                }
+                finally
+                {
+                    gate?.EndAttempt();
+                }
+
                 if (result.Ok) return result;
 
                 AppPaths.Log(Loc.T("Fetch.AttemptFailed", source.Name, attempt, attemptsPerSource, result.Message));
-                if (attempt == attemptsPerSource) failures.Add(Loc.T("Fetch.FailureItem", source.Name, result.Message));
+                if (skipped || attempt == attemptsPerSource)
+                {
+                    failures.Add(Loc.T("Fetch.FailureItem", source.Name, result.Message));
+                    break;
+                }
             }
         }
 
@@ -608,6 +1037,24 @@ public static class ModFetcher
         r.Fail(Loc.T(singleSource ? "Fetch.SingleSourceFailed" : "Fetch.AllFailed",
                      string.Join("\n     ", failures)));
         return r;
+    }
+
+    /// <summary>The status line for a progress tick that carries no byte count.</summary>
+    public static string DescribePhase(FetchProgress p) => p.Phase switch
+    {
+        FetchPhase.Probing => Loc.T("Fetch.Probing"),
+        FetchPhase.Extracting => Loc.T("Fetch.PhaseExtracting", p.SourceName),
+        FetchPhase.Verifying => Loc.T("Fetch.PhaseVerifying", p.SourceName),
+        _ => "",
+    };
+
+    /// <summary>One line for the log or the picker: a source's measured rate and latency, or why it did not answer.</summary>
+    public static string DescribeProbe(SourceProbe probe)
+    {
+        var name = Sources.FirstOrDefault(s => s.Id == probe.SourceId)?.Name ?? probe.SourceId;
+        return probe.Reachable
+            ? Loc.T("Fetch.ProbeResult", name, FormatSpeed(probe.BytesPerSecond), (int)probe.Latency.TotalMilliseconds)
+            : Loc.T("Fetch.ProbeFailed", name, probe.Error);
     }
 
     /// <summary>True when the caller named a source rather than leaving it on automatic.</summary>
@@ -620,7 +1067,6 @@ public static class ModFetcher
         string destination,
         IProgress<string>? progress,
         CancellationToken ct,
-        string? versionLabel,
         IProgress<FetchProgress>? byteProgress,
         DownloadGate? gate,
         string runtimeModel)
@@ -630,8 +1076,6 @@ public static class ModFetcher
 
         try
         {
-            Directory.CreateDirectory(destination);
-
             if (source.IsArchive)
             {
                 await FetchArchiveAsync(source, staging, r, progress, ct, byteProgress, gate).ConfigureAwait(false);
@@ -641,33 +1085,16 @@ public static class ModFetcher
             else
                 await FetchIndividualFilesAsync(source, staging, r, progress, ct, byteProgress, gate, runtimeModel).ConfigureAwait(false);
 
-            // Verify before touching the destination: a mirror must not be able to write a DLL that
-            // is not the project's build.
-            var (accepted, message) = Verify(staging, source.Official);
-            r.Note(message);
-            if (!accepted)
-            {
-                r.Fail(message);
-                return r;
-            }
-
             ct.ThrowIfCancellationRequested();
-            var copied = Publish(staging, destination);
-            File.WriteAllText(Path.Combine(destination, BuildCatalog.Marker), BuildCatalog.Normalize(runtimeModel));
-            PruneSupersededEntries(destination, r);
-            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName)) ?? SupportedRelease;
+            progress?.Report(Loc.T("Fetch.Verifying"));
+            byteProgress?.Report(new FetchProgress(source.Name, 1, 1, 0, -1, 0, FetchPhase.Verifying));
 
-            // The shipped INI stopped carrying a version banner in 0.3.0, so the label detected before
-            // the download is remembered on disk — otherwise the badge would have nothing to show and
-            // the next start could not tell which release is installed. Written even when unknown
-            // (then empty): a payload that replaced the old files must not keep the old marker.
-            TryWriteVersionMarker(destination, version);
-            if (!new ModSource(destination).SupportsSuperResolution) r.Note(Loc.T("Manage.NeedFullPackage"));
+            // The shipped INI stopped carrying a version banner in 0.3.0; every source serves the
+            // supported tag, so that is the release this payload is.
+            var version = ModSource.ReadVersion(Path.Combine(staging, ModSource.IniName)) ?? SupportedRelease;
+            if (!InstallStaged(staging, destination, source.Official, runtimeModel, version, r, out var copied)) return r;
 
-            r.Note(Loc.T("Fetch.Updated", copied, destination));
-            r.Message = version is null
-                ? Loc.T("Fetch.UpdatedGeneric", copied, source.Name)
-                : Loc.T("Fetch.UpdatedVersion", version, source.Name);
+            r.Message = Loc.T("Fetch.UpdatedVersion", version, source.Name);
         }
         catch (OperationCanceledException)
         {
@@ -685,6 +1112,121 @@ public static class ModFetcher
         return r;
     }
 
+    /// <summary>
+    /// Verifies a staged payload and only then copies it into the mod folder: a mirror, or a zip of
+    /// unknown origin, must not be able to put a DLL there that is not the project's build.
+    /// </summary>
+    private static bool InstallStaged(string staging, string destination, bool officialSource, string runtimeModel,
+        string releaseLabel, OpResult r, out int copied)
+    {
+        copied = 0;
+        var (accepted, message) = Verify(staging, officialSource);
+        r.Note(message);
+        if (!accepted)
+        {
+            r.Fail(message);
+            return false;
+        }
+
+        Directory.CreateDirectory(destination);
+        copied = Publish(staging, destination);
+        File.WriteAllText(Path.Combine(destination, BuildCatalog.Marker), BuildCatalog.Normalize(runtimeModel));
+        PruneSupersededEntries(destination, r);
+
+        // Written even when empty: a payload that replaced the old files must not keep the old marker.
+        TryWriteVersionMarker(destination, releaseLabel);
+        if (!new ModSource(destination).SupportsSuperResolution) r.Note(Loc.T("Manage.NeedFullPackage"));
+
+        r.Note(Loc.T("Fetch.Updated", copied, destination));
+        return true;
+    }
+
+    /// <summary>
+    /// Installs a release archive the user already has — the offline route for a machine that cannot
+    /// reach any source. The file is handled like a mirror download: every DLL must carry the project's
+    /// pinned signature (NVIDIA's for the runtime it bundles), and nothing reaches the mod folder
+    /// unless the whole payload passes. Both the full package and a zip of the base files are accepted.
+    /// </summary>
+    public static Task<OpResult> ImportArchiveAsync(string archivePath, string destination,
+        IProgress<string>? progress, CancellationToken ct, string runtimeModel = BuildCatalog.Default) =>
+        Task.Run(() => ImportArchive(archivePath, destination, progress, ct, runtimeModel), ct);
+
+    private static OpResult ImportArchive(string archivePath, string destination, IProgress<string>? progress,
+        CancellationToken ct, string runtimeModel)
+    {
+        var r = new OpResult();
+        var name = Path.GetFileName(archivePath);
+        if (BuildCatalog.Normalize(runtimeModel) != BuildCatalog.Default)
+        {
+            r.Fail(Loc.T("Manage.RetiredBuild"));
+            return r;
+        }
+        if (!File.Exists(archivePath) || !string.Equals(Path.GetExtension(archivePath), ".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            r.Fail(Loc.T("Fetch.ImportNotZip", name));
+            return r;
+        }
+        var length = new FileInfo(archivePath).Length;
+        if (length > MaxArchiveBytes)
+        {
+            r.Fail(Loc.T("Fetch.ArchiveTooLarge", length / 1024 / 1024));
+            return r;
+        }
+
+        var staging = Path.Combine(Path.GetTempPath(), "dlssg_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            progress?.Report(Loc.T("Fetch.ImportExtracting", name));
+            ExtractArchive(archivePath, staging, ct);
+
+            ct.ThrowIfCancellationRequested();
+            progress?.Report(Loc.T("Fetch.Verifying"));
+            var label = ReleaseLabelOf(staging);
+            if (!InstallStaged(staging, destination, officialSource: false, runtimeModel, label ?? "", r, out _)) return r;
+
+            if (label is not null && label != SupportedRelease)
+                r.Note(Loc.T("Fetch.ImportVersionMismatch", label, SupportedRelease));
+            var full = ModSource.SuperResolutionFiles.All(p => File.Exists(Path.Combine(staging, p)));
+            r.Message = Loc.T(full ? "Fetch.ImportedFull" : "Fetch.ImportedBase",
+                label ?? Loc.T("ModSource.UnknownVersion"), name);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (InvalidDataException ex)
+        {
+            r.Fail(Loc.T("Fetch.ImportBadZip", name, ex.Message));
+        }
+        catch (Exception ex)
+        {
+            r.Fail(Loc.T("Fetch.ImportFailed", ex.Message));
+        }
+        finally
+        {
+            TryDeleteDirectory(staging);
+        }
+
+        return r;
+    }
+
+    /// <summary>The release an archive holds: the INI banner of the 0.2.x line, otherwise the README title.</summary>
+    private static string? ReleaseLabelOf(string staging)
+    {
+        var fromIni = ModSource.ReadVersion(Path.Combine(staging, ModSource.IniName));
+        if (fromIni is not null) return fromIni;
+
+        try
+        {
+            var readme = Path.Combine(staging, "README.md");
+            return File.Exists(readme) ? ReadVersionFromReadme(File.ReadAllText(readme)) : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
     private static async Task FetchArchiveAsync(Source source, string staging, OpResult r, IProgress<string>? progress,
         CancellationToken ct, IProgress<FetchProgress>? byteProgress, DownloadGate? gate)
     {
@@ -692,58 +1234,14 @@ public static class ModFetcher
         try
         {
             using var client = CreateClient();
-            using var response = await GetCheckedAsync(client, new Uri(UrlFor(source, RepoPath, RepoRef, null)), ct).ConfigureAwait(false);
-
-            if (response.Content.Headers.ContentLength is long declared && declared > MaxArchiveBytes)
-                throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge", declared / 1024 / 1024));
-
-            var declaredTotal = response.Content.Headers.ContentLength ?? -1;
-
-            await using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-            await using (var output = File.Create(archive))
-            {
-                var buffer = new byte[81920];
-                long total = 0;
-                int read;
-                var meter = new SpeedMeter();
-                var lastReport = Stopwatch.GetTimestamp();
-                while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                {
-                    total += read;
-                    if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge2"));
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-
-                    if (byteProgress is not null && Stopwatch.GetElapsedTime(lastReport).TotalMilliseconds >= 150)
-                    {
-                        lastReport = Stopwatch.GetTimestamp();
-                        byteProgress.Report(new FetchProgress(source.Name, 1, 1, total, declaredTotal, meter.Report(total)));
-                    }
-                }
-
-                byteProgress?.Report(new FetchProgress(source.Name, 1, 1, total, declaredTotal > 0 ? declaredTotal : total, meter.Report(total)));
-                r.Note(Loc.T("Fetch.Downloaded", $"{total / 1024 / 1024.0:F1}"));
-            }
+            var total = await TransferAsync(client, new Uri(UrlFor(source, RepoPath, RepoRef, null)), archive, MaxArchiveBytes,
+                (done, size, speed) => byteProgress?.Report(new FetchProgress(source.Name, 1, 1, done, size, speed)),
+                gate, ct).ConfigureAwait(false);
+            r.Note(Loc.T("Fetch.Downloaded", $"{total / 1024 / 1024.0:F1}"));
 
             progress?.Report(Loc.T("Fetch.Extracting"));
-            Directory.CreateDirectory(staging);
-            ZipFile.ExtractToDirectory(archive, staging, overwriteFiles: true);
-
-            // Release packages already have version.dll at their root.
-            if (File.Exists(Path.Combine(staging, ModSource.IniName))) return;
-
-            // The archive wraps everything in a single top-level folder whose name varies by source.
-            var inner = Directory.EnumerateDirectories(staging).FirstOrDefault();
-            if (inner is null) throw new InvalidOperationException(Loc.T("Fetch.BadArchive"));
-
-            // Flatten that wrapper so staging looks like the payload root.
-            foreach (var entry in Directory.EnumerateFileSystemEntries(inner))
-            {
-                var target = Path.Combine(staging, Path.GetFileName(entry));
-                if (Directory.Exists(entry)) Directory.Move(entry, target);
-                else File.Move(entry, target, overwrite: true);
-            }
-
-            TryDeleteDirectory(inner);
+            byteProgress?.Report(new FetchProgress(source.Name, 1, 1, total, total, 0, FetchPhase.Extracting));
+            ExtractArchive(archive, staging, ct);
         }
         finally
         {
@@ -762,9 +1260,7 @@ public static class ModFetcher
 
         foreach (var artifact in Payload)
         {
-            // Pause takes effect between files: an HTTP connection left idle for a long pause is
-            // worse than finishing the current file first.
-            gate?.Wait(ct);
+            await (gate?.WaitAsync(ct) ?? Task.CompletedTask).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
             done++;
             progress?.Report(Loc.T("Fetch.Downloading", artifact.SourcePath, done, Payload.Length));
@@ -778,32 +1274,10 @@ public static class ModFetcher
 
             try
             {
-                using var response = await GetCheckedAsync(client, url, ct).ConfigureAwait(false);
-                var declaredTotal = response.Content.Headers.ContentLength ?? -1;
-                await using var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-                await using var output = File.Create(target);
-
-                var buffer = new byte[81920];
-                long fileBytes = 0;
-                int read;
-                var meter = new SpeedMeter();
-                var lastReport = Stopwatch.GetTimestamp();
-                while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                {
-                    total += read;
-                    fileBytes += read;
-                    if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ContentTooLarge"));
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-
-                    if (byteProgress is not null && Stopwatch.GetElapsedTime(lastReport).TotalMilliseconds >= 150)
-                    {
-                        lastReport = Stopwatch.GetTimestamp();
-                        byteProgress.Report(new FetchProgress(source.Name, done, Payload.Length, fileBytes, declaredTotal, meter.Report(fileBytes)));
-                    }
-                }
-
-                byteProgress?.Report(new FetchProgress(source.Name, done, Payload.Length, fileBytes,
-                    declaredTotal > 0 ? declaredTotal : fileBytes, meter.Report(fileBytes)));
+                var index = done;
+                total += await TransferAsync(client, url, target, MaxArchiveBytes - total,
+                    (fileBytes, size, speed) => byteProgress?.Report(new FetchProgress(source.Name, index, Payload.Length, fileBytes, size, speed)),
+                    gate, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (!artifact.Required && ex is not OperationCanceledException)
             {

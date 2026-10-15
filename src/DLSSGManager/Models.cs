@@ -208,7 +208,7 @@ public sealed class GameEntry : Observable
     private string _preferredProxy = AutoProxy;
     private string _notes = "";
     private GameStatus _status = GameStatus.Unknown;
-    private string _statusDetail = "";
+    private LocalizedText? _statusDetail;
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get => _name; set => Set(ref _name, value); }
@@ -229,8 +229,8 @@ public sealed class GameEntry : Observable
     private ProtectionReport? _protection;
 
     /// <summary>
-    /// Anti-cheat scan result, refreshed on every deploy and status check. Raises change
-    /// notifications for itself and the banner properties derived from it.
+    /// Anti-cheat scan result, refreshed on every deploy and status check. How it is presented lives
+    /// in <c>ProtectionViewModel</c>; the model only carries the facts.
     /// </summary>
     [JsonIgnore]
     public ProtectionReport? Protection
@@ -240,35 +240,27 @@ public sealed class GameEntry : Observable
         {
             if (!Set(ref _protection, value)) return;
             Raise(nameof(HasKernelAntiCheat));
-            Raise(nameof(ShowAntiCheatBanner));
-            Raise(nameof(AntiCheatTitle));
-            Raise(nameof(AntiCheatBody));
         }
     }
 
     [JsonIgnore]
     public bool HasKernelAntiCheat => Protection?.HasKernelAntiCheat == true;
 
-    /// <summary>
-    /// The banner only appears for games the mod cannot work on. A clean game gets no banner at all —
-    /// an "all clear" notice is noise, and any wording next to a warning icon reads as bad news.
-    ///
-    /// Exposed as a bool rather than a Visibility so this model stays free of WPF types; the view
-    /// converts it. That keeps the deployment logic independent of the presentation framework.
-    /// </summary>
-    [JsonIgnore]
-    public bool ShowAntiCheatBanner => Protection?.HasKernelAntiCheat == true;
-
-    [JsonIgnore] public string AntiCheatTitle => Protection is null ? "" : "⚠ " + Protection.Summary;
-
-    [JsonIgnore]
-    public string AntiCheatBody => Protection?.HasKernelAntiCheat == true
-        ? Loc.T("Anti.BannerBody")
-        : "";
-
     [JsonIgnore] public GameStatus Status { get => _status; set { if (Set(ref _status, value)) { Raise(nameof(StatusText)); Raise(nameof(StatusColor)); } } }
 
-    [JsonIgnore] public string StatusDetail { get => _statusDetail; set => Set(ref _statusDetail, value); }
+    /// <summary>
+    /// The last check's detail, kept as a message rather than finished text so it is rendered in the
+    /// active language each time it is read. A language switch then only re-notifies it — no check
+    /// has to run again.
+    /// </summary>
+    [JsonIgnore]
+    public LocalizedText? StatusMessage
+    {
+        get => _statusDetail;
+        set { if (Set(ref _statusDetail, value)) Raise(nameof(StatusDetail)); }
+    }
+
+    [JsonIgnore] public string StatusDetail => _statusDetail?.ToString() ?? "";
 
     [JsonIgnore]
     public string StatusText => Status switch
@@ -313,8 +305,6 @@ public sealed class GameEntry : Observable
         Raise(nameof(StatusText));
         Raise(nameof(StatusDetail));
         Raise(nameof(Subtitle));
-        Raise(nameof(AntiCheatTitle));
-        Raise(nameof(AntiCheatBody));
     }
 }
 
@@ -334,8 +324,11 @@ public sealed class AppData
     /// <summary>Interface language code; see <see cref="Languages"/>.</summary>
     public string InterfaceLanguage { get; set; } = Languages.ChineseSimplified;
 
-    /// <summary>Colour scheme: "dark" or "light". See <see cref="Theme"/>.</summary>
-    public string InterfaceTheme { get; set; } = "dark";
+    /// <summary>
+    /// Colour scheme: "system" (follow the Windows app mode), "dark" or "light". See <see cref="Theme"/>.
+    /// Libraries written before "system" existed keep the explicit choice they recorded.
+    /// </summary>
+    public string InterfaceTheme { get; set; } = ThemeKeys.SystemPreference;
     /// <summary>Detected GPU name, cached so the UI shows something before the probe finishes.</summary>
     public string GpuName { get; set; } = "";
     public string GpuDriver { get; set; } = "";

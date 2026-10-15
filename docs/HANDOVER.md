@@ -2,7 +2,7 @@
 
 面向接手本项目的人（或未来的自己）。README 讲"怎么用"，这里讲"为什么这么做、改的时候会踩到什么"。
 
-- 当前版本：**v1.11.0**（上游 0.4.0 适配、自动接管与绿色版发布）
+- 当前版本：**v1.11.0**（上游 0.4.0 适配、下载源测速、离线 ZIP 导入、ViewModel 拆分与主题/语言修复）
 - 后续仅发布 Windows x64 自包含单文件绿色版，统一使用 `Portable` 发布配置；产物为 `publish/DLSSGManager.exe`。
 - **v1.11.0 已适配上游 0.4.0**：完整包下载、目录化运行负载、单代理升级、新配置与恢复规则见 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。下面描述 0.3.x 待机共存与 310.1 下载的历史说明不适用于 0.4.0。
 - 改进范围：见 [UI 落地清单](UI-IMPROVEMENTS.md)。
@@ -34,6 +34,7 @@ dotnet run --project src/DLSSGManager -c Debug -- --fetch --silent
 
 # 构建免安装绿色版（自带 .NET）
 dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile=Portable
+
 ```
 
 **发版流程**：`git tag v1.9.4 && git push origin main --tags` → GitHub Actions（`.github/workflows/release.yml`）自动构建绿色版与 SHA256SUMS 并挂到 Release。工作流会把 tag 号通过 `-p:Version` 注入程序集，所以界面里的版本徽章自动正确。
@@ -46,22 +47,28 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile
 
 ```
 src/DLSSGManager/
-├─ ModFetcher.cs        970  下载：多源链、DNS/证书校验、进度、暂停门、解压、版本探测
-├─ DeploymentService.cs 939  部署/恢复/接管/状态判定——唯一写游戏目录的地方
-├─ MainWindow.xaml      827  界面布局（顶栏/信息条/侧边栏/卡片详情/进度条/日志条）
-├─ MainWindow.xaml.cs   854  窗口装配、语言与主题切换、下载面板、GPU 行
-├─ MainWindow.Actions.cs 561 部署/恢复/接管/批量/扫描/路径选择处理器
+├─ DeploymentService.cs 1087 部署/恢复/接管/状态判定——唯一写游戏目录的地方
+├─ MainWindow.xaml      1055 界面布局（顶栏/信息条/侧边栏/卡片详情/进度条/日志条）
+├─ ModFetcher.cs        980  下载：多源链、DNS/证书校验、进度、暂停门、解压、版本探测
+├─ MainWindow.xaml.cs   937  窗口装配、语言与主题切换、游戏列表筛选、下载面板、GPU 行
 ├─ Gpu.cs               548  显卡探测、架构判定、注册表显示名读写、INF 间接字符串解析
-├─ Strings.zh/en.cs     424  两张字符串表（必须逐键对齐）
-├─ Models.cs            306  GameEntry / GameProfile / DeploymentInfo / AppData
+├─ Strings.zh/en.cs     490  两张字符串表（必须逐键对齐）
+├─ MainWindow.Actions.cs 432 部署/恢复/全部部署/扫描/路径选择/打开与启动处理器
+├─ Models.cs            343  GameEntry / GameProfile / DeploymentInfo / AppData
+├─ ModSource.cs         315  本地负载：入口名、0.4.0 运行目录、配置约束、导入自定义代理
+├─ Store.cs             309  library.json 读写与归一化、INI 模板按节渲染
 ├─ Detection.cs         283  游戏发现：双标记扫描、渲染目录解析、主程序挑选
-├─ ModSource.cs         282  本地负载：入口名、版本读取、导入自定义代理
-├─ AntiCheat.cs         282  内核级反作弊识别、隔离副本查找
-├─ Store.cs             249  library.json 读写与归一化、INI 模板渲染
+├─ AntiCheat.cs         281  内核级反作弊识别、隔离副本查找
 ├─ Shell.cs             231  打开目录/文件、启动游戏、提权重启
 ├─ ModSourceLocator.cs  191  负载目录解析（仓库检出 / 便携 / 用户目录）
+├─ MainWindow.Management.cs 176  保存状态（未保存/待应用/已应用）与关闭流程
 ├─ Localization.cs      115  Loc.T、语言归一化
-├─ Detection/Gpu 之外的工具：Native、OutputLog、Converters、Theme、ThemeKeys、Palette、Version
+├─ MainWindow.Batch.cs  112  批量：显式勾选、逐项结果、失败重试
+├─ MainWindow.Protection.cs 105  添加目录时立即提示内核级反作弊
+├─ App.xaml.cs          105  启动、--fetch 命令行下载、全局异常兜底
+├─ ManagementState.cs   100  配置快照（见 4.9）、310.1 构建限制、游戏特例指引
+├─ SourcePickerDialog / GpuNameDialog   下载源选择、显卡显示名编辑
+├─ 其余工具：Native、OutputLog、Converters、Theme、ThemeKeys、Palette、Version、TrExtension
 └─ Themes/Dark.xaml + Light.xaml   两套主题字典（键必须完全一致）
 
 mod/                          下载得到的上游负载，不入库
@@ -139,6 +146,14 @@ mod/                          下载得到的上游负载，不入库
 ### 4.8 版本标记
 
 0.3.0 起上游 INI 不再有 `; Native x.y.z.` 横幅，所以版本号靠两级：INI 横幅 → README 标题 → 下载时探测到的版本写进 `.manager-version` 标记文件（`--fetch` 路径也必须探测，否则徽章停在旧版本——修过一次）。
+
+### 4.9 配置快照（"待应用"提示）
+
+部署时把 `RenderDir` / `PreferredProxy` / `Profile` 序列化成 JSON 存进 `DeploymentInfo.AppliedConfiguration`，`ConfigurationState.NeedsApply` 拿它和当前配置比较。
+
+- 比较前先把旧快照**按当前类型读回再序列化**：新增的 `GameProfile` 字段在旧快照里不存在，读回时取默认值，所以加设置不会把所有已部署游戏都标成待应用。
+- 由此带来的约束：**新字段的默认值必须等于上游出厂默认**——旧部署的 INI 从没写过它，实际生效的就是上游默认。改了某个字段的含义或取值范围时，旧快照会被当成"未变"，需要单独处理。
+- 没有快照的旧记录（v1.11.0 之前部署）一律显示待应用，不臆测其配置。
 
 ---
 

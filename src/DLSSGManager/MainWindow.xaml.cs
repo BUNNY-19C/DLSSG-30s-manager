@@ -1,14 +1,19 @@
-using System.Collections.ObjectModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Interop;
+using DLSSGManager.ViewModels;
 using Microsoft.Win32;
 
 namespace DLSSGManager;
 
 public partial class MainWindow : Window
 {
+    /// <summary>Broadcast when a system setting changes; "ImmersiveColorSet" names the app colour mode.</summary>
+    private const int WM_SETTINGCHANGE = 0x001A;
+
     private readonly AppData _data;
     private OutputLog _log = null!;
     private ListCollectionView? _gamesView;
@@ -46,6 +51,15 @@ public partial class MainWindow : Window
     /// </summary>
     private GpuInfo? _gpuInfo;
 
+    /// <summary>Saving and applying state of the selected game.</summary>
+    public GameManagementViewModel Management { get; } = new();
+
+    /// <summary>Batch deployment over the ticked games.</summary>
+    public BatchViewModel Batch { get; }
+
+    /// <summary>Anti-cheat banner and notices for the selected game.</summary>
+    public ProtectionViewModel Protection { get; } = new();
+
     public MainWindow()
     {
         // Loaded once and reused: the language has to be applied before the first XAML string is
@@ -54,7 +68,11 @@ public partial class MainWindow : Window
         _data = LibraryStore.Load();
 
         Loc.SetLanguage(_data.InterfaceLanguage);
-        Theme.Apply(_data.InterfaceTheme);
+        Theme.ApplyPreference(_data.InterfaceTheme);
+
+        // Created before InitializeComponent: the XAML binds to these properties, and a binding that
+        // first sees null would not notice the assignment.
+        Batch = new BatchViewModel(this, _data, () => GameList.Items.Cast<GameEntry>());
 
         InitializeComponent();
 
@@ -88,44 +106,36 @@ public partial class MainWindow : Window
     private GameEntry? Selected => GameList.SelectedItem as GameEntry;
 
     /// <summary>
-    /// Fills the numeric dropdowns from the string table. Called again after a language change, since
-    /// these items carry display text rather than a binding.
+    /// Fills the numeric dropdowns. Built once: the entries re-read their labels on a language
+    /// change (see <see cref="Choice{T}"/>), so the selection is never disturbed.
     /// </summary>
     private void BuildLocalizedCombos()
     {
-        DownloadTargetText.Text = Loc.T("Manage.DownloadTarget", ModFetcher.SupportedRelease, BuildCatalog.BundledRuntimeVersion);
-        var frames = FrameCombo.SelectedValue;
         FrameCombo.ItemsSource = new[]
         {
-            new Choice(1, Loc.T("Detail.Frames2X")),
-            new Choice(2, Loc.T("Detail.Frames3X")),
-            new Choice(3, Loc.T("Detail.Frames4X")),
-            new Choice(4, Loc.T("Detail.Frames5X")),
-            new Choice(5, Loc.T("Detail.Frames6X")),
+            Choice<int>.Localized(1, "Detail.Frames2X"),
+            Choice<int>.Localized(2, "Detail.Frames3X"),
+            Choice<int>.Localized(3, "Detail.Frames4X"),
+            Choice<int>.Localized(4, "Detail.Frames5X"),
+            Choice<int>.Localized(5, "Detail.Frames6X"),
         };
-        if (frames is not null) FrameCombo.SelectedValue = frames;
 
-        var level = LogCombo.SelectedValue;
         LogCombo.ItemsSource = new[]
         {
-            new Choice(0, Loc.T("Detail.Log0")),
-            new Choice(1, Loc.T("Detail.Log1")),
-            new Choice(2, Loc.T("Detail.Log2")),
-            new Choice(3, Loc.T("Detail.Log3")),
+            Choice<int>.Localized(0, "Detail.Log0"),
+            Choice<int>.Localized(1, "Detail.Log1"),
+            Choice<int>.Localized(2, "Detail.Log2"),
+            Choice<int>.Localized(3, "Detail.Log3"),
         };
-        if (level is not null) LogCombo.SelectedValue = level;
 
-        // The 0.3.3 consistency tier. Labels are translated, so the items are rebuilt on a
-        // language change like the other numeric dropdowns; the selected value is the plain 0-3.
-        var tier = TierCombo.SelectedValue;
+        // The 0.3.3 consistency tier; the selected value is the plain 0-3.
         TierCombo.ItemsSource = new[]
         {
-            new Choice(0, Loc.T("Detail.Tier0")),
-            new Choice(1, Loc.T("Detail.Tier1")),
-            new Choice(2, Loc.T("Detail.Tier2")),
-            new Choice(3, Loc.T("Detail.Tier3")),
+            Choice<int>.Localized(0, "Detail.Tier0"),
+            Choice<int>.Localized(1, "Detail.Tier1"),
+            Choice<int>.Localized(2, "Detail.Tier2"),
+            Choice<int>.Localized(3, "Detail.Tier3"),
         };
-        if (tier is not null) TierCombo.SelectedValue = tier;
     }
 
     /// <summary>Fills the language picker without triggering the change handler.</summary>
@@ -133,7 +143,7 @@ public partial class MainWindow : Window
     {
         _suppressLanguageChange = true;
         LanguageCombo.ItemsSource = Languages.All
-            .Select(code => new TextChoice(code, Languages.DisplayName(code)))
+            .Select(code => Choice<string>.Fixed(code, Languages.DisplayName(code)))
             .ToList();
         LanguageCombo.SelectedValuePath = "Value";
         LanguageCombo.DisplayMemberPath = "Text";
@@ -147,12 +157,14 @@ public partial class MainWindow : Window
         _suppressThemeChange = true;
         ThemeCombo.ItemsSource = new[]
         {
-            new TextChoice(ThemeKeys.StorageValue(AppTheme.Dark), Loc.T("Theme.Dark")),
-            new TextChoice(ThemeKeys.StorageValue(AppTheme.Light), Loc.T("Theme.Light")),
+            Choice<string>.Localized(ThemeKeys.SystemPreference, "Theme.System"),
+            Choice<string>.Localized(ThemeKeys.StorageValue(AppTheme.Dark), "Theme.Dark"),
+            Choice<string>.Localized(ThemeKeys.StorageValue(AppTheme.Light), "Theme.Light"),
         };
         ThemeCombo.SelectedValuePath = "Value";
-        ThemeCombo.DisplayMemberPath = "Text";
-        ThemeCombo.SelectedValue = ThemeKeys.StorageValue(Theme.Current);
+        // The item template binds the closed selection directly to Choice.Text.
+        // DisplayMemberPath lets the selection box cache the old translated string.
+        ThemeCombo.SelectedValue = Theme.Preference;
         _suppressThemeChange = false;
     }
 
@@ -198,21 +210,51 @@ public partial class MainWindow : Window
     private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressThemeChange) return;
-        if (ThemeCombo.SelectedItem is not TextChoice choice) return;
+        if (ThemeCombo.SelectedItem is not Choice<string> choice) return;
+        if (choice.Value == Theme.Preference) return;
 
-        var wanted = ThemeKeys.Parse(choice.Value);
-        if (wanted == Theme.Current) return;
+        var before = Theme.Current;
+        Theme.ApplyPreference(choice.Value);
+        if (Theme.Current != before) AfterThemeSwitch();
 
-        Theme.Apply(wanted);
+        _data.InterfaceTheme = Theme.Preference;
+        SaveLibrary();
+    }
+
+    /// <summary>Repaints what the dictionary swap cannot reach on its own.</summary>
+    private void AfterThemeSwitch()
+    {
         ColorFromCode();
 
         // The list's status dots and status text bind through ThemeBrushConverter, which only
         // re-evaluates when the source notifies — the dictionary swap alone leaves them in the
         // previous theme's colours.
         foreach (var game in _data.Games) game.RaiseThemeColors();
+    }
 
-        _data.InterfaceTheme = ThemeKeys.StorageValue(wanted);
-        SaveLibrary();
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WatchSystemTheme);
+    }
+
+    /// <summary>
+    /// Follows the Windows app mode while the preference is "system". Windows announces the change
+    /// with WM_SETTINGCHANGE naming "ImmersiveColorSet"; the registry is re-read rather than trusting
+    /// the message, and <see cref="Theme.FollowSystemChange"/> ignores the repeats Windows sends.
+    /// </summary>
+    private IntPtr WatchSystemTheme(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_SETTINGCHANGE && lParam != IntPtr.Zero &&
+            Marshal.PtrToStringUni(lParam) == "ImmersiveColorSet")
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (Theme.FollowSystemChange()) AfterThemeSwitch();
+            });
+        }
+
+        return IntPtr.Zero;
     }
 
     /// <summary>
@@ -243,7 +285,7 @@ public partial class MainWindow : Window
     private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressLanguageChange) return;
-        if (LanguageCombo.SelectedItem is not TextChoice choice) return;
+        if (LanguageCombo.SelectedItem is not Choice<string> choice) return;
 
         var language = choice.Value;
 
@@ -254,16 +296,18 @@ public partial class MainWindow : Window
         // language. Acting only on a genuine change makes repeated events harmless.
         if (string.Equals(language, Loc.Current, StringComparison.Ordinal)) return;
 
+        // One pass on the UI thread, so the window repaints once, already in the new language: bound
+        // text and the localized dropdown entries follow SetLanguage's notification, and status details
+        // are messages rendered on read — no game needs checking again for its text to switch.
         Loc.SetLanguage(language);
 
         // Text set from code does not follow the bindings, so it is re-applied here.
-        BuildLocalizedCombos();
-        BuildThemeCombo();
         BuildProxyCombo();
         RefreshCodeText();
         RefreshModSource();
+        Protection.Refresh();
+        Management.RefreshText();
         UpdateStatusCard();
-        RefreshAllStatus();
 
         _data.InterfaceLanguage = language;
         SaveLibrary();
@@ -278,6 +322,7 @@ public partial class MainWindow : Window
         // The version is language-independent, but the title text is not — and the code-assigned
         // title has replaced the loc binding from XAML, so re-apply it here.
         Title = Loc.T("App.Name") + "  " + AppVersion.Label;
+        DownloadTargetText.Text = Loc.T("Manage.DownloadTarget", ModFetcher.SupportedRelease, BuildCatalog.BundledRuntimeVersion);
 
         AdminButton.Content = Loc.T(Native.IsElevated() ? "Toolbar.AlreadyAdmin" : "Toolbar.RestartAdmin");
 
@@ -531,13 +576,26 @@ public partial class MainWindow : Window
         var sourceRoot = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
         var target = BuildCatalog.SourceDirectory(sourceRoot, _data.DownloadBuild);
 
-        // The picker replaces a plain confirmation dialog: choosing where to download from is the one
-        // decision worth surfacing here, and it doubles as the confirmation step.
-        var picker = new SourcePickerDialog { Owner = this };
-        if (picker.ShowDialog() != true) return;
+        // The dialog runs the download or offline import itself, with its own progress, pause, skip
+        // and cancel; the window only records what it did once it closes.
+        var dialog = new SourcePickerDialog(target, _data.DownloadBuild) { Owner = this };
+        dialog.ShowDialog();
+
+        foreach (var result in dialog.Results)
+        {
+            _log.Details(result.Lines);
+            _log.Result(result.Ok, result.Message);
+        }
+
+        if (!dialog.Installed) return;
 
         _data.ModSourcePath = sourceRoot;
-        DownloadModFiles(target, picker.SelectedSourceId);
+        SaveLibrary();
+
+        // Re-read the profile defaults and entry names from the freshly installed payload.
+        RefreshModSource();
+        BuildProxyCombo();
+        UpdateStatusCard();
     }
 
     /// <summary>
@@ -589,62 +647,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Downloads the mod files into <paramref name="target"/>, for the toolbar button.
-    /// </summary>
-    /// <param name="sourceId">
-    /// A specific source id, or <see cref="ModFetcher.AutoSourceId"/> to try each in turn.
-    /// </param>
-    private async void DownloadModFiles(string target, string sourceId = ModFetcher.AutoSourceId)
-    {
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
-
-        _busy = true;
-        _log.Write(Loc.T("Fetch.StartLog"));
-
-        OpResult result;
-        try
-        {
-            result = await RunModFetchAsync(target, sourceId);
-        }
-        catch (OperationCanceledException)
-        {
-            _busy = false;
-            BatchStatusText.Text = "";
-            _log.Write(Loc.T("Fetch.Cancelled"));
-            return;
-        }
-        catch (Exception ex)
-        {
-            _busy = false;
-            BatchStatusText.Text = "";
-            _log.Write("✗ " + ex.Message);
-            AppPaths.Log("下载 Mod 文件失败: " + ex);
-            return;
-        }
-
-        _busy = false;
-        BatchStatusText.Text = "";
-        _log.Details(result.Lines);
-        _log.Result(result.Ok, result.Message);
-
-        // Re-read the profile defaults from the freshly downloaded INI text.
-        RefreshModSource();
-        if (result.Ok && !_closeWhenIdle)
-        {
-            // The body already starts with the result message (its {0}), so it is not repeated here.
-            MessageBox.Show(this,
-                Loc.T("Fetch.DoneBody", result.Message),
-                Loc.T("Fetch.DoneTitle"),
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-    }
-
-    /// <summary>
-    /// Shared fetch runner for the toolbar button and the first-run fetch: probe, then download with
-    /// the progress panel visible. The panel carries a byte-level progress bar, the transfer speed,
-    /// a pause switch (effective at file boundaries) and cancel — cancel is what makes switching
-    /// sources easy: nothing is written to the mod folder until verification passes, so an aborted
-    /// download leaves the previous payload intact and the user can immediately pick another source.
+    /// The first-run fetch: probe, then download with the progress panel in the log strip visible.
+    /// The panel carries a byte-level progress bar, the transfer speed, pause and cancel. Nothing is
+    /// written to the mod folder until verification passes, so an aborted download leaves the previous
+    /// payload intact; the toolbar's download dialog is where another source can then be picked.
     /// </summary>
     private async Task<OpResult> RunModFetchAsync(string target, string sourceId)
     {
@@ -668,7 +674,7 @@ public partial class MainWindow : Window
             var detected = await ModFetcher.DetectLatestVersionAsync(ct);
             if (detected is not null) textProgress.Report(Loc.T("Fetch.AutoDetected", detected));
 
-            var result = await ModFetcher.DownloadIntoAsync(target, textProgress, ct, sourceId, detected,
+            var result = await ModFetcher.DownloadIntoAsync(target, textProgress, ct, sourceId,
                                                            byteProgress, _fetchGate, _data.DownloadBuild);
             if (result.Ok) SaveLibrary();
             return result;
@@ -686,6 +692,14 @@ public partial class MainWindow : Window
     /// <summary>Applies one byte-progress tick. Runs on the UI thread (Progress&lt;T&gt; posts).</summary>
     private void UpdateFetchProgress(ModFetcher.FetchProgress p)
     {
+        if (p.Phase != ModFetcher.FetchPhase.Downloading)
+        {
+            FetchProgressText.Text = ModFetcher.DescribePhase(p);
+            FetchProgressBar.IsIndeterminate = true;
+            FetchProgressSpeed.Text = "";
+            return;
+        }
+
         FetchProgressText.Text = p.FileTotal <= 1
             ? Loc.T("Fetch.ProgressArchive", p.SourceName)
             : Loc.T("Fetch.ProgressFiles", p.SourceName, p.FileIndex, p.FileTotal);
@@ -763,9 +777,10 @@ public partial class MainWindow : Window
         var game = Selected;
         NoSelectionText.Visibility = game is null ? Visibility.Visible : Visibility.Collapsed;
         DetailPanel.Visibility = game is null ? Visibility.Collapsed : Visibility.Visible;
-        if (game is null) { UpdateManagementState(); return; }
+        if (game is null) { Protection.Track(null); UpdateManagementState(); return; }
 
         DataContext = game;
+        Protection.Track(game);
         ProxyCombo.SelectedValue = game.PreferredProxy;
         RefreshModSource();
         BuildProxyCombo();
@@ -794,11 +809,10 @@ public partial class MainWindow : Window
         OpenLogButton.IsEnabled = game.RenderDir is not null &&
                                   Directory.Exists(Path.Combine(game.RenderDir, ModSource.LogDirName, "logs"));
 
-        // Deployment stays available on games with a kernel anti-cheat; RunDeploy warns and asks for
-        // confirmation first. The scan cannot know whether this game's protection lets a given entry
-        // name survive — a community entry such as d3d12.dll exists precisely because some do — so the
-        // decision is the user's, not the scan's.
-        DeployButton.ToolTip = game.HasKernelAntiCheat ? Loc.T("Deploy.BlockedTooltip") : null;
+        // Deployment stays available on games with a kernel anti-cheat (the button's tooltip, from
+        // Protection, says so); RunDeploy warns and asks for confirmation first. The scan cannot know
+        // whether this game's protection lets a given entry name survive — a community entry such as
+        // d3d12.dll exists precisely because some do — so the decision is the user's, not the scan's.
         UpdateManagementState();
     }
 

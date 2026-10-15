@@ -20,4 +20,8 @@
     <ApplicationDefinition Include="App.xaml" SubType="Designer" Generator="MSBuild:Compile" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
 </Project>

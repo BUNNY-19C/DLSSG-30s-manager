@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:DLSSGManager"
         xmlns:loc="clr-namespace:DLSSGManager"
+        x:Name="Root"
         Title="{loc:Tr App.Name}" Height="820" Width="1240" MinHeight="640" MinWidth="1040"
         Background="{DynamicResource WindowBackground}" Foreground="{DynamicResource TextPrimary}"
         FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13">
@@ -11,6 +12,10 @@
         <local:BoolToVisibility x:Key="BoolToVis" />
         <local:NotEmptyToVisibility x:Key="NotEmptyToVis" />
         <local:ThemeBrushConverter x:Key="ThemeBrush" />
+        <!-- Keep the selected label bound to the item when the interface language changes. -->
+        <DataTemplate x:Key="ChoiceLabelTemplate">
+            <TextBlock Text="{Binding Text}" />
+        </DataTemplate>
 
         <!--
             颜色全部来自主题字典（Themes/Dark.xaml 或 Themes/Light.xaml），用 DynamicResource
@@ -398,7 +403,9 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ComboBox x:Name="ThemeCombo" Width="92" Margin="0,0,0,0" VerticalAlignment="Center"
+                    <ComboBox x:Name="ThemeCombo" Width="112" Margin="0,0,0,0" VerticalAlignment="Center"
+                              IsTextSearchEnabled="False"
+                              ItemTemplate="{StaticResource ChoiceLabelTemplate}"
                               ToolTip="{loc:Tr Toolbar.Theme}"
                               SelectionChanged="ThemeCombo_SelectionChanged" />
                     <ComboBox x:Name="LanguageCombo" Width="112" Margin="6,0,0,0" VerticalAlignment="Center"
@@ -412,11 +419,13 @@
         <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Padding="16,10">
             <StackPanel>
-                <Border x:Name="SaveFailureBanner" Visibility="Collapsed" Padding="10" Margin="0,0,0,8"
+                <Border Padding="10" Margin="0,0,0,8"
+                        Visibility="{Binding Management.HasSaveFailure, ElementName=Root, Converter={StaticResource BoolToVis}}"
                         Background="{DynamicResource WarnBannerBackground}" BorderBrush="{DynamicResource WarnBannerBorder}" BorderThickness="1">
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="{loc:Tr Manage.RetrySave}" Style="{StaticResource ToolButton}" Click="SaveConfiguration_Click" />
-                        <TextBlock x:Name="SaveFailureText" Foreground="{DynamicResource WarnBannerBody}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Management.SaveFailureText, ElementName=Root}"
+                                   Foreground="{DynamicResource WarnBannerBody}" TextWrapping="Wrap" />
                     </DockPanel>
                 </Border>
                 <Grid>
@@ -638,20 +647,20 @@
                     <!-- 批量操作：低频，收在边栏底部 -->
                     <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                             Padding="12,9">
-                        <StackPanel x:Name="BatchControls">
-                            <TextBlock x:Name="BatchSelectionText" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <StackPanel x:Name="BatchControls" DataContext="{Binding Batch, ElementName=Root}">
+                            <TextBlock Text="{Binding SelectionText}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6" />
                             <WrapPanel>
-                                <Button Content="{loc:Tr Manage.SelectVisible}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Click="SelectVisible_Click" />
-                                <Button Content="{loc:Tr Manage.ClearSelection}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Click="ClearBatchSelection_Click" />
+                                <Button Content="{loc:Tr Manage.SelectVisible}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Command="{Binding SelectVisibleCommand}" />
+                                <Button Content="{loc:Tr Manage.ClearSelection}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Command="{Binding ClearSelectionCommand}" />
                             </WrapPanel>
                             <WrapPanel Margin="0,6,0,0">
-                            <Button x:Name="DeploySelectedButton" Style="{StaticResource ToolButton}"
-                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="DeployAll_Click" ToolTip="{loc:Tr List.BatchScope}" />
-                            <Button x:Name="RestoreSelectedButton" Style="{StaticResource DangerButton}"
-                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="RestoreAll_Click" ToolTip="{loc:Tr List.BatchScope}" />
+                            <Button Content="{Binding DeployText}" Style="{StaticResource ToolButton}"
+                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Command="{Binding DeploySelectedCommand}" ToolTip="{loc:Tr List.BatchScope}" />
+                            <Button Content="{Binding RestoreText}" Style="{StaticResource DangerButton}"
+                                    Padding="10,5" FontSize="12" Margin="0,0,6,0" Command="{Binding RestoreSelectedCommand}" ToolTip="{loc:Tr List.BatchScope}" />
                             </WrapPanel>
                             <WrapPanel Margin="0,6,0,0">
-                                <Button Content="{loc:Tr Manage.SelectUpdates}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Click="SelectUpdates_Click" />
+                                <Button Content="{loc:Tr Manage.SelectUpdates}" Style="{StaticResource ToolButton}" Padding="8,4" FontSize="12" Command="{Binding SelectUpdatesCommand}" />
                                 <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}"
                                         Padding="8,4" FontSize="12" Click="RefreshAll_Click" />
                             </WrapPanel>
@@ -664,13 +673,15 @@
             <Border Grid.Column="1" Background="{DynamicResource WindowBackground}">
                 <ScrollViewer x:Name="DetailScrollViewer" VerticalScrollBarVisibility="Auto" Padding="16,14,16,14">
                     <StackPanel>
-                        <Border x:Name="BatchResultsPanel" Visibility="Collapsed" Style="{StaticResource SectionCard}">
+                        <Border DataContext="{Binding Batch, ElementName=Root}" Style="{StaticResource SectionCard}"
+                                Visibility="{Binding ResultsVisible, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
                                 <WrapPanel>
-                                    <Button x:Name="RetryBatchButton" Content="{loc:Tr Manage.RetryFailed}" Style="{StaticResource ToolButton}" Click="RetryBatch_Click" />
-                                    <Button Content="{loc:Tr Manage.HideResults}" Style="{StaticResource ToolButton}" Click="HideBatchResults_Click" />
+                                    <Button Content="{loc:Tr Manage.RetryFailed}" Style="{StaticResource ToolButton}" Command="{Binding RetryFailedCommand}" />
+                                    <Button Content="{loc:Tr Manage.HideResults}" Style="{StaticResource ToolButton}" Command="{Binding HideResultsCommand}" />
                                 </WrapPanel>
-                                <TextBox x:Name="BatchResultsBox" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
+                                <TextBox Text="{Binding Results, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="180"
+                                         VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
                             </StackPanel>
                         </Border>
                         <TextBlock x:Name="NoSelectionText" Text="{loc:Tr List.Empty}"
@@ -679,11 +690,11 @@
                         <StackPanel x:Name="DetailPanel" Visibility="Collapsed">
                             <Border x:Name="AntiCheatBanner" Background="{DynamicResource WarnBannerBackground}" BorderBrush="{DynamicResource WarnBannerBorder}"
                                     BorderThickness="1" CornerRadius="8" Padding="14,11" Margin="0,0,0,12"
-                                    Visibility="{Binding ShowAntiCheatBanner, Converter={StaticResource BoolToVis}}">
+                                    Visibility="{Binding Protection.ShowBanner, ElementName=Root, Converter={StaticResource BoolToVis}}">
                                 <StackPanel>
-                                    <TextBlock Text="{Binding AntiCheatTitle}" FontWeight="SemiBold"
+                                    <TextBlock Text="{Binding Protection.BannerTitle, ElementName=Root}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource WarnBannerTitle}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding AntiCheatBody}" Foreground="{DynamicResource WarnBannerBody}"
+                                    <TextBlock Text="{Binding Protection.BannerBody, ElementName=Root}" Foreground="{DynamicResource WarnBannerBody}"
                                                FontSize="11.5" TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
@@ -699,9 +710,11 @@
                                                FontSize="12" TextWrapping="Wrap" Margin="0,3,0,12" />
 
                                     <WrapPanel>
-                                        <Button x:Name="SaveConfigurationButton" Content="{loc:Tr Manage.Save}" Style="{StaticResource ToolButton}"
+                                        <Button Content="{loc:Tr Manage.Save}" Style="{StaticResource ToolButton}"
+                                                IsEnabled="{Binding Management.CanSave, ElementName=Root}"
                                                 Margin="0,0,6,8" Click="SaveConfiguration_Click" />
-                                        <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
+                                        <Button Content="{Binding Management.ApplyButtonText, ElementName=Root}" Style="{StaticResource PrimaryButton}"
+                                                ToolTip="{Binding Protection.DeployToolTip, ElementName=Root}"
                                                 Margin="0,0,6,8" Click="Deploy_Click" />
                                         <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
                                                 Margin="0,0,6,8" Click="Restore_Click" />
@@ -718,8 +731,10 @@
                                     </WrapPanel>
                                     <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
                                               IsChecked="False" Margin="0,4,0,0" />
-                                    <TextBlock x:Name="ConfigurationStatusText" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,8,0,0" />
-                                    <TextBlock x:Name="PayloadStatusText" Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock Text="{Binding Management.ConfigurationStatus, ElementName=Root}"
+                                               Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                    <TextBlock Text="{Binding Management.PayloadStatus, ElementName=Root}"
+                                               Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
 
@@ -776,10 +791,11 @@
                                         <TextBlock Text="{loc:Tr Manage.GameBuild}" Style="{StaticResource FieldLabel}" />
                                         <ComboBox x:Name="RuntimeBuildCombo" Grid.Column="1" SelectedValuePath="Tag" SelectedValue="{Binding Profile.RuntimeModel, Mode=TwoWay}">
                                             <ComboBoxItem Tag="310.9" Content="310.9.16 · 6X" />
-                                            <ComboBoxItem Tag="310.1" Content="{loc:Tr Manage.BuildArchive}" />
                                         </ComboBox>
                                     </Grid>
-                                    <TextBlock x:Name="BuildWarningText" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarnBrush}" Margin="0,0,0,8" />
+                                    <TextBlock Text="{Binding Management.BuildWarning, ElementName=Root}"
+                                               Visibility="{Binding Management.HasBuildWarning, ElementName=Root, Converter={StaticResource BoolToVis}}"
+                                               TextWrapping="Wrap" Foreground="{DynamicResource StatusWarnBrush}" Margin="0,0,0,8" />
 
                                     <!--
                                         两组配置项，按 mod 源里的 INI schema 显示一组：
@@ -827,7 +843,7 @@
                                             <TextBlock Text="{loc:Tr Detail.OptimizedTier}" Style="{StaticResource FieldLabel}" />
                                             <ComboBox x:Name="TierCombo" Grid.Column="1"
                                                       IsEnabled="{Binding Profile.UsesDlss}"
-                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False" SelectedValuePath="Value"
                                                       SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
                                                       ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
                                         </Grid>
@@ -839,7 +855,7 @@
                                             <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
                                             <ComboBox x:Name="FrameCombo" Grid.Column="1"
                                                       IsEnabled="{Binding Profile.UsesDlss}"
-                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False" SelectedValuePath="Value"
                                                       SelectedValue="{Binding Profile.MaxGeneratedFrames, Mode=TwoWay}" />
                                         </Grid>
                                     </StackPanel>
@@ -929,7 +945,7 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{loc:Tr Detail.LogLevel}" Style="{StaticResource FieldLabel}" />
                                             <ComboBox x:Name="LogCombo" Grid.Column="1"
-                                                      DisplayMemberPath="Text" SelectedValuePath="Value"
+                                                      ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False" SelectedValuePath="Value"
                                                       SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
                                         </Grid>
                                     </StackPanel>
@@ -946,7 +962,8 @@
                                             <ComboBoxItem Tag="zzz" Content="{loc:Tr Guide.ZzzName}" />
                                             <ComboBoxItem Tag="nte" Content="{loc:Tr Guide.NteName}" />
                                         </ComboBox>
-                                        <TextBlock x:Name="GuidanceText" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextMuted}" />
+                                        <TextBlock Text="{Binding Management.Guidance, ElementName=Root}"
+                                                   TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextMuted}" />
                                     </StackPanel>
                                 </Expander>
                             </Border>

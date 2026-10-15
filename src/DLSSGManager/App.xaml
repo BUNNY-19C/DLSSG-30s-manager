@@ -1,6 +1,7 @@
 <Application x:Class="DLSSGManager.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:DLSSGManager"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <ResourceDictionary>
@@ -14,6 +15,12 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Dark.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- 下拉项的本地化内容（LocalizedString）按此模板显示：下拉框收起时展示的是选中项内容
+                 本身，绑定到 Text 才能在切换语言时原地刷新。放在应用级，所有窗口共用。 -->
+            <DataTemplate DataType="{x:Type loc:LocalizedString}">
+                <TextBlock Text="{Binding Text}" />
+            </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

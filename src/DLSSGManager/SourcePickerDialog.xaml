@@ -3,11 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:DLSSGManager"
         Title="{loc:Tr Fetch.PickerTitle}"
-        SizeToContent="Height" Width="480"
+        SizeToContent="Height" Width="560"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="{DynamicResource WindowBackground}" Foreground="{DynamicResource TextPrimary}"
         FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13"
-        ShowInTaskbar="False">
+        ShowInTaskbar="False" AllowDrop="True"
+        DragEnter="Window_DragOver" DragOver="Window_DragOver" DragLeave="Window_DragLeave" Drop="Window_Drop"
+        Loaded="Window_Loaded" Closing="Window_Closing">
 
     <!--
         颜色全部走 DynamicResource，指向应用级主题字典（Themes/*.xaml）。
@@ -135,6 +137,38 @@
             <Setter Property="Foreground" Value="{DynamicResource TextSection}" />
         </Style>
 
+        <Style x:Key="PickerSectionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSection}" />
+        </Style>
+
+        <Style x:Key="PickerSmallButton" TargetType="Button" BasedOn="{StaticResource PickerButton}">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <!-- 与 MainWindow 相同的进度条：默认模板是系统绿细线，与主题无关 -->
+        <Style TargetType="ProgressBar">
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                            <Border x:Name="PART_Track">
+                                <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryBackground}"
+                                        CornerRadius="5" HorizontalAlignment="Left" MinWidth="5" />
+                            </Border>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- 与 MainWindow 相同的细滚动条：此窗口资源作用域独立，隐式样式传不进来 -->
         <Style x:Key="ScrollPageButton" TargetType="RepeatButton">
             <Setter Property="Focusable" Value="False" />
@@ -195,23 +229,97 @@
         </Style>
     </Window.Resources>
 
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="18">
         <TextBlock Text="{loc:Tr Fetch.PickerPrompt}" FontSize="14" FontWeight="SemiBold" />
+
+        <!-- 安装包：完整包来自 Release 附件（含超分内核），基础包逐文件取自仓库 -->
+        <TextBlock Text="{loc:Tr Fetch.PackageSection}" Style="{StaticResource PickerSectionText}" Margin="0,14,0,4" />
+        <StackPanel x:Name="PackagePanel">
+            <RadioButton x:Name="FullPackageRadio" GroupName="package" IsChecked="True" Margin="0,4,0,4"
+                         Style="{StaticResource PickerRadio}" Checked="Package_Checked">
+                <StackPanel>
+                    <TextBlock Text="{loc:Tr Fetch.PackageFull}" FontWeight="SemiBold" />
+                    <TextBlock x:Name="FullPackageNote" Text="{loc:Tr Fetch.PackageFullNote}" Style="{StaticResource PickerNoteText}" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton x:Name="BasePackageRadio" GroupName="package" Margin="0,4,0,4"
+                         Style="{StaticResource PickerRadio}" Checked="Package_Checked">
+                <StackPanel>
+                    <TextBlock Text="{loc:Tr Fetch.PackageBase}" FontWeight="SemiBold" />
+                    <TextBlock Text="{loc:Tr Fetch.PackageBaseNote}" Style="{StaticResource PickerNoteText}" />
+                </StackPanel>
+            </RadioButton>
+        </StackPanel>
+
+        <Border Style="{StaticResource PickerSeparator}" Margin="0,10,0,10" />
+
+        <DockPanel>
+            <Button x:Name="RetestButton" DockPanel.Dock="Right" Content="{loc:Tr Fetch.Retest}"
+                    Style="{StaticResource PickerSmallButton}" Click="Retest_Click" />
+            <TextBlock x:Name="ProbeStatusText" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="0,0,10,0"
+                       FontSize="11.5" Foreground="{DynamicResource TextMuted}" />
+            <TextBlock Text="{loc:Tr Fetch.SourceSection}" Style="{StaticResource PickerSectionText}" VerticalAlignment="Center" />
+        </DockPanel>
 
         <!-- Rows are added in code from ModFetcher.AvailableSources, so a new source shows up here
              without any change to this file. Height is capped and the list scrolls, so the window
              stays a reasonable size as sources are added. -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="420" Margin="0,12,0,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="300" Margin="0,6,0,0">
             <StackPanel x:Name="OptionsPanel" />
         </ScrollViewer>
 
+        <Border Style="{StaticResource PickerSeparator}" Margin="0,10,0,10" />
+
+        <!-- 离线包：拖入窗口任意位置均可，按钮供键盘和不便拖拽时使用 -->
+        <Border x:Name="DropZone" BorderThickness="1" CornerRadius="7" Padding="12,10"
+                BorderBrush="{DynamicResource InputBorderBrush}" Background="{DynamicResource InputBackground}"
+                AutomationProperties.Name="{loc:Tr Fetch.DropTitle}">
+            <DockPanel>
+                <Button x:Name="BrowseButton" DockPanel.Dock="Right" Content="{loc:Tr Fetch.ImportBrowse}"
+                        Style="{StaticResource PickerSmallButton}" VerticalAlignment="Center" Click="Browse_Click" />
+                <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="{loc:Tr Fetch.DropTitle}" FontWeight="SemiBold" />
+                    <TextBlock Text="{loc:Tr Fetch.DropHint}" Style="{StaticResource PickerNoteText}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,12,0,0" Padding="12,10" CornerRadius="7"
+                Background="{DynamicResource CardBackground}">
+            <StackPanel>
+                <TextBlock x:Name="ProgressTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <ProgressBar x:Name="TransferBar" Minimum="0" Maximum="100" Margin="0,8,0,8"
+                             AutomationProperties.Name="{loc:Tr Fetch.ProgressLabel}" />
+                <DockPanel>
+                    <StackPanel x:Name="TransferButtons" DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="PauseButton" Content="{loc:Tr Fetch.Pause}" Style="{StaticResource PickerSmallButton}"
+                                Margin="6,0,0,0" Click="Pause_Click" ToolTip="{loc:Tr Fetch.PauseTip}" />
+                        <Button x:Name="SkipButton" Content="{loc:Tr Fetch.Skip}" Style="{StaticResource PickerSmallButton}"
+                                Margin="6,0,0,0" Click="Skip_Click" ToolTip="{loc:Tr Fetch.SkipTip}" />
+                        <Button x:Name="StopButton" Content="{loc:Tr Fetch.Cancel}" Style="{StaticResource PickerSmallButton}"
+                                Margin="6,0,0,0" Click="Stop_Click" ToolTip="{loc:Tr Fetch.CancelTip}" />
+                    </StackPanel>
+                    <TextBlock x:Name="ProgressDetail" VerticalAlignment="Center" FontSize="12"
+                               FontFamily="Cascadia Mono, Consolas, monospace" Foreground="{DynamicResource TextMuted}"
+                               TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <TextBlock x:Name="ProgressStatus" Style="{StaticResource PickerNoteText}" TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis" Margin="0,6,0,0"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="ResultText" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,12,0,0" />
+
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button x:Name="CancelButton" Content="{loc:Tr Common.Cancel}"
+            <Button x:Name="CloseButton" Content="{loc:Tr Common.Close}"
                     Style="{StaticResource PickerButton}" Margin="0,0,8,0"
-                    IsCancel="True" Click="Cancel_Click" />
+                    IsCancel="True" Click="Close_Click" />
             <Button x:Name="ConfirmButton" Content="{loc:Tr Fetch.PickerDownload}"
                     Style="{StaticResource PickerPrimaryButton}"
                     IsDefault="True" Click="Confirm_Click" />
         </StackPanel>
     </StackPanel>
+    </ScrollViewer>
 </Window>

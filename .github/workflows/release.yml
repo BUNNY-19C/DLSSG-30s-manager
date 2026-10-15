@@ -35,7 +35,8 @@ jobs:
           if ($env:GITHUB_REF -like 'refs/tags/v*') {
             $v = $env:GITHUB_REF -replace '^refs/tags/v', ''
           } else {
-            $v = '0.0.0-dev'
+            [xml]$project = Get-Content src/DLSSGManager/DLSSGManager.csproj
+            $v = [string]($project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1)
           }
           "value=$v" >> $env:GITHUB_OUTPUT
           Write-Output "版本: $v"

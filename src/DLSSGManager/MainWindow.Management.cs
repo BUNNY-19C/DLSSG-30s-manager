@@ -1,22 +1,21 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Threading;
 
 namespace DLSSGManager;
 
+/// <summary>
+/// Window lifecycle around the library: watching games for edits, saving, and the close guard. What
+/// the panel shows about saved and applied state comes from <see cref="Management"/>.
+/// </summary>
 public partial class MainWindow
 {
-    private readonly Dictionary<GameEntry, string> _savedConfigurations = new();
     private readonly HashSet<GameEntry> _observedGames = new();
-    private string _savedLibrary = "";
     private bool _managementReady;
     private bool _closeWhenIdle;
     private bool _operationBusy;
     private int _pendingChecks;
-    private string? _saveFailure;
     private readonly DispatcherTimer _closeTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private bool GameWorkRunning => _busy || _statusRefreshRunning || _pendingChecks > 0;
 
@@ -44,7 +43,7 @@ public partial class MainWindow
     {
         _managementReady = true;
         ObserveGames();
-        RememberSaved();
+        Management.RememberSaved(_data);
         _data.Games.CollectionChanged += GamesChanged;
         Closing += WindowClosing;
         _closeTimer.Tick += (_, _) =>
@@ -70,7 +69,7 @@ public partial class MainWindow
             game.PropertyChanged -= GameEdited;
             game.Profile.PropertyChanged -= ProfileEdited;
             _observedGames.Remove(game);
-            _savedConfigurations.Remove(game);
+            Management.Forget(game);
         }
         foreach (var game in _data.Games)
             if (_observedGames.Add(game))
@@ -96,17 +95,11 @@ public partial class MainWindow
         GameEdited(sender, e);
     }
 
-    private void RememberSaved()
-    {
-        _savedLibrary = LibraryStore.Serialize(_data);
-        foreach (var game in _data.Games) _savedConfigurations[game] = ConfigurationState.Saved(game);
-    }
-
     private bool SaveLibrary()
     {
         var result = LibraryStore.Save(_data);
-        _saveFailure = result.Ok ? null : result.Message;
-        if (result.Ok) RememberSaved();
+        Management.SaveFailure = result.Ok ? null : result.Message;
+        if (result.Ok) Management.RememberSaved(_data);
         else _log.Result(false, Loc.T("Manage.SaveFailed", result.Message));
         UpdateManagementState();
         return result.Ok;
@@ -121,29 +114,8 @@ public partial class MainWindow
     private void UpdateManagementState()
     {
         if (!_managementReady) return;
-        SaveFailureBanner.Visibility = _saveFailure is null ? Visibility.Collapsed : Visibility.Visible;
-        SaveFailureText.Text = _saveFailure is null ? "" : Loc.T("Manage.SaveFailed", _saveFailure);
-        var selectedCount = GameList.Items.Cast<GameEntry>().Count(g => g.BatchSelected);
-        BatchSelectionText.Text = Loc.T("Manage.SelectedCount", selectedCount,
-            _data.Games.Count(g => g.BatchSelected && !GameList.Items.Contains(g)));
-        DeploySelectedButton.Content = Loc.T("Manage.DeploySelected", selectedCount);
-        RestoreSelectedButton.Content = Loc.T("Manage.RestoreSelected", selectedCount);
-        RetryBatchButton.IsEnabled = _failedBatch.Count > 0;
-        var game = Selected;
-        if (game is null) return;
-        var unsaved = !_savedConfigurations.TryGetValue(game, out var saved) || saved != ConfigurationState.Saved(game);
-        var pending = ConfigurationState.NeedsApply(game) || game.Status is GameStatus.Modified or GameStatus.Missing;
-        ConfigurationStatusText.Text = Loc.T(unsaved ? "Manage.Unsaved" : pending ? "Manage.Pending" : "Manage.Applied");
-        SaveConfigurationButton.IsEnabled = !_busy && (unsaved || _saveFailure is not null);
-        DeployButton.Content = Loc.T(game.Deployment is null ? "Action.Deploy" : "Manage.Apply");
-        var source = CurrentSource(game);
-        BuildWarningText.Text = source.ConfigurationError(game.Profile) ?? "";
-        BuildWarningText.Visibility = BuildWarningText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        PayloadStatusText.Text = Loc.T("Manage.PayloadVersions", game.Profile.RuntimeModel,
-            source.IsValid ? source.Version : Loc.T("Manage.NotDownloaded"),
-            game.Deployment?.RuntimeModel is { Length: > 0 } build ? build : Loc.T("Common.Unknown"),
-            game.Deployment?.ModVersion ?? "—");
-        GuidanceText.Text = GameGuidance.Describe(game);
+        Batch.UpdateSelection();
+        if (Selected is { } game) Management.Refresh(game, CurrentSource(game), _busy);
     }
 
     private void WindowClosing(object? sender, CancelEventArgs e)
@@ -163,12 +135,12 @@ public partial class MainWindow
             return;
         }
         _closeWhenIdle = false;
-        if (_saveFailure is not null)
+        if (Management.SaveFailure is not null)
         {
             if (!SaveLibrary()) e.Cancel = true;
             return;
         }
-        if (_savedLibrary == LibraryStore.Serialize(_data)) return;
+        if (!Management.HasUnsavedChanges(_data)) return;
         var answer = MessageBox.Show(this, Loc.T("Manage.CloseUnsaved"), Loc.T("App.Name"),
             MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         e.Cancel = answer == MessageBoxResult.Cancel || (answer == MessageBoxResult.Yes && !SaveLibrary());

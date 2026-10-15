@@ -84,6 +84,29 @@ public sealed class Loc : INotifyPropertyChanged
     public static string Join(IEnumerable<string> values) => string.Join(ListSeparator, values);
 }
 
+/// <summary>
+/// A message kept as its key and arguments, rendered in whatever language is active when it is read.
+///
+/// Status details are produced on a background thread and stay on screen long after; holding the
+/// finished string would leave them in the previous language after a switch, and re-running every
+/// check just to translate them takes seconds. Arguments may themselves be
+/// <see cref="LocalizedText"/>: formatting renders them too.
+/// </summary>
+public sealed class LocalizedText
+{
+    private readonly Func<string> _render;
+
+    public LocalizedText(string key, params object?[] args) =>
+        _render = args.Length == 0 ? () => Loc.T(key) : () => Loc.T(key, args);
+
+    private LocalizedText(Func<string> render) => _render = render;
+
+    /// <summary>Text the caller assembles from several entries; the function runs on every read.</summary>
+    public static LocalizedText Computed(Func<string> render) => new(render);
+
+    public override string ToString() => _render();
+}
+
 /// <summary>The languages the interface can be shown in.</summary>
 public static class Languages
 {

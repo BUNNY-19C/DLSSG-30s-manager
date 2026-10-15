@@ -925,7 +925,7 @@ public static class DeploymentService
     /// <see cref="Apply"/>, which lets the expensive filesystem work run off the UI thread while the
     /// property changes land on it.
     /// </summary>
-    public sealed record GameCheck(GameStatus Status, string Detail, ProtectionReport? Protection)
+    public sealed record GameCheck(GameStatus Status, LocalizedText Detail, ProtectionReport? Protection)
     {
         public DeploymentInfo? Adoption { get; init; }
     }
@@ -941,10 +941,10 @@ public static class DeploymentService
     public static GameCheck Evaluate(GameEntry game)
     {
         if (string.IsNullOrWhiteSpace(game.RenderDir))
-            return new GameCheck(GameStatus.Unknown, Loc.T("Status.NoRenderDir"), null);
+            return new GameCheck(GameStatus.Unknown, new LocalizedText("Status.NoRenderDir"), null);
 
         if (!Directory.Exists(game.RenderDir))
-            return new GameCheck(GameStatus.Missing, Loc.T("Status.RenderDirMissing"), null);
+            return new GameCheck(GameStatus.Missing, new LocalizedText("Status.RenderDirMissing"), null);
 
         // Drives the warning banner, so it is refreshed on every check.
         var protection = AntiCheat.Scan(game.RenderDir);
@@ -956,7 +956,7 @@ public static class DeploymentService
         {
             var found = FindInstalledProxy(root);
             if (found is null)
-                return new GameCheck(GameStatus.NotDeployed, Loc.T("Status.NotDeployedDetail"), protection);
+                return new GameCheck(GameStatus.NotDeployed, new LocalizedText("Status.NotDeployedDetail"), protection);
 
             var adoption = ReadManualInstallation(root, found);
             return EvaluateInstallation(root, adoption, protection) with { Adoption = adoption };
@@ -974,9 +974,7 @@ public static class DeploymentService
         var liveProxies = OwnedEntryNames(prev)
             .Where(n => File.Exists(Path.Combine(root, n)) && IsOurProxyAt(root, n, prev))
             .ToList();
-        var standby = liveProxies.Count > 1
-            ? " " + Loc.T("Status.StandbyNote", liveProxies.Count - 1)
-            : "";
+        var standbyCount = liveProxies.Count - 1;
 
         var proxyPath = Path.Combine(root, prev.ProxyName);
         var iniPath = Path.Combine(root, ModSource.IniName);
@@ -986,17 +984,17 @@ public static class DeploymentService
         var runtimeFiles = prev.Files.Where(f => ModSource.RuntimeFiles.Contains(f.FileName)).ToArray();
         var modern = runtimeFiles.Length > 0 || new ModSource(root).UsesRuntimeDirectory;
         if (liveProxies.Count > 1 && modern)
-            return new GameCheck(GameStatus.Modified, Loc.T("Status.Multiple040"), protection);
+            return new GameCheck(GameStatus.Modified, new LocalizedText("Status.Multiple040"), protection);
         if (modern)
             foreach (var name in ModSource.RequiredRuntimeFiles)
                 if (!File.Exists(Path.Combine(root, name)))
-                    return new GameCheck(GameStatus.Missing, Loc.T("Status.MissingProxy", name), protection);
+                    return new GameCheck(GameStatus.Missing, new LocalizedText("Status.MissingProxy", name), protection);
         foreach (var file in runtimeFiles)
         {
             var path = Path.Combine(root, file.FileName);
-            if (!File.Exists(path)) return new GameCheck(GameStatus.Missing, Loc.T("Status.MissingProxy", file.FileName), protection);
+            if (!File.Exists(path)) return new GameCheck(GameStatus.Missing, new LocalizedText("Status.MissingProxy", file.FileName), protection);
             if (!Sha256(path).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
-                return new GameCheck(GameStatus.Modified, Loc.T("Status.RuntimeModified", file.FileName), protection);
+                return new GameCheck(GameStatus.Modified, new LocalizedText("Status.RuntimeModified", file.FileName), protection);
         }
 
         if (!proxyOk || !iniOk)
@@ -1006,8 +1004,10 @@ public static class DeploymentService
             var quarantined = AntiCheat.FindQuarantinedCopies(root, prev.ProxyName, prev.ProxySha256);
 
             var detail = quarantined.Count > 0
-                ? Loc.T("Status.Quarantined", prev.ProxyName, quarantined.Count, protection.Summary)
-                : !proxyOk ? Loc.T("Status.MissingProxy", prev.ProxyName) : Loc.T("Status.MissingIni", ModSource.IniName);
+                ? new LocalizedText("Status.Quarantined", prev.ProxyName, quarantined.Count,
+                    LocalizedText.Computed(() => protection.Summary))
+                : !proxyOk ? new LocalizedText("Status.MissingProxy", prev.ProxyName)
+                           : new LocalizedText("Status.MissingIni", ModSource.IniName);
 
             return new GameCheck(GameStatus.Missing, detail, protection);
         }
@@ -1017,16 +1017,18 @@ public static class DeploymentService
             var proxyMatch = string.Equals(Sha256(proxyPath), prev.ProxySha256, StringComparison.OrdinalIgnoreCase);
             var iniMatch = string.Equals(Sha256(iniPath), prev.IniSha256, StringComparison.OrdinalIgnoreCase);
 
+            var (version, proxy, deployedAt) = (prev.ModVersion, prev.ProxyName, prev.DeployedAt);
             return proxyMatch && iniMatch
-                ? new GameCheck(GameStatus.Deployed,
-                    $"Mod {prev.ModVersion} · {prev.ProxyName} · {prev.DeployedAt}" + standby, protection)
+                ? new GameCheck(GameStatus.Deployed, LocalizedText.Computed(() =>
+                    $"Mod {version} · {proxy} · {deployedAt}" +
+                    (standbyCount > 0 ? " " + Loc.T("Status.StandbyNote", standbyCount) : "")), protection)
                 : new GameCheck(GameStatus.Modified,
-                    proxyMatch ? Loc.T("Status.IniModified") : Loc.T("Status.ProxyMismatch"),
+                    new LocalizedText(proxyMatch ? "Status.IniModified" : "Status.ProxyMismatch"),
                     protection);
         }
         catch (Exception ex)
         {
-            return new GameCheck(GameStatus.Unknown, Loc.T("Status.VerifyFailed", ex.Message), protection);
+            return new GameCheck(GameStatus.Unknown, new LocalizedText("Status.VerifyFailed", ex.Message), protection);
         }
     }
 
@@ -1036,7 +1038,7 @@ public static class DeploymentService
         if (game.Deployment is null && check.Adoption is not null) game.Deployment = check.Adoption;
         if (check.Protection is not null) game.Protection = check.Protection;
         game.Status = check.Status;
-        game.StatusDetail = check.Detail;
+        game.StatusMessage = check.Detail;
     }
 
     /// <summary>

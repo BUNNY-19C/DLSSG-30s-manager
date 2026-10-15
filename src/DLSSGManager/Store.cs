@@ -87,7 +87,8 @@ public static class LibraryStore
                 var data = System.Text.Json.JsonSerializer.Deserialize<AppData>(json, JsonOptions);
                 if (data is not null)
                 {
-                    // 0.4.0 has a single downloadable build; per-game legacy choices stay intact.
+                    // Only the current runtime is selectable; deployment records still describe
+                    // the files actually installed so existing restore records remain accurate.
                     data.DownloadBuild = BuildCatalog.Default;
                     foreach (var g in data.Games) Normalize(g);
                     return data;
@@ -130,7 +131,7 @@ public static class LibraryStore
     private static void Normalize(GameEntry g)
     {
         g.Profile = g.Profile ?? new GameProfile();
-        g.Profile.RuntimeModel = BuildCatalog.Normalize(g.Profile.RuntimeModel);
+        g.Profile.RuntimeModel = BuildCatalog.Default;
         g.Profile.Router = NormalizeRouter(g.Profile.Router);
         g.Profile.KernelImage = NormalizeKernel(g.Profile.KernelImage);
         g.Profile.Preset = NormalizePreset(g.Profile.Preset);

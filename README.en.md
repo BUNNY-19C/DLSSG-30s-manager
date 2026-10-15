@@ -56,17 +56,16 @@ Settings are stored per game. If saving fails, the error and retry action remain
 | Build | Multiplier ceiling | Optimization tiers | Preset |
 |---|---|---|---|
 | 310.9.16 (current) | DLSS up to 6X; XeSS fixed at 2X | DLSS: 0–3, default 2 | Auto / A / B / C |
-| 310.1 (legacy, local only) | 4X | 0 / 1 | Auto |
 
 Downloads prefer the upstream **0.4.0 full Release package**, including both INT8 super-resolution files. Per-file sources provide frame generation and XeSS only; super resolution requires the complete payload. New profiles default to tier 2, DLSS and super resolution off; saved optimization tiers are preserved.
 
 Preset C is FG Lite: faster, with reduced quality on HUD and occlusion edges. XeSS has flow-resolution and HUD-less input settings. INT8 super resolution applies to RTX 20 / 30 modes using presets L / M. Per-frame GPU timing is in advanced settings.
 
-The DLSS multiplier is a ceiling; actual counts depend on game support. The retired 310.1 build is no longer downloaded, but existing `mod/variants/310.1/` files remain usable locally and restorable. Select the current build in game details to upgrade.
+The DLSS multiplier is a ceiling; actual counts depend on game support. Only the current 310.9.16 runtime is offered. Older game profiles select it on load; game files are updated when you apply the configuration. Existing legacy deployment records remain available for restoration.
 
 ### Updates and batch operations
 
-1. Click “Download / update mod files”, choose a source and wait. **Downloading updates local payload files only; it does not modify games automatically.**
+1. Click “Download / update mod files” and choose the full or base package. Sources are measured; automatic mode tries the fastest first, or you can choose one source. Pause, resume or skip a source during downloads. Drag an upstream ZIP into the window to import it offline. **Downloads and imports update local payload files only; they do not modify games automatically.**
 2. Use “Select updates”, or check the games you want to process.
 3. Review the current search and status filters, then click the batch deploy button. Normal batch operations process **only visible checked games**; hidden selections are counted separately.
 4. Review individual results. “Retry failed items” processes the previous failed games, regardless of whether they are currently visible.

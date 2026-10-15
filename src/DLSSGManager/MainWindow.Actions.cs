@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using DLSSGManager.ViewModels;
 using Microsoft.Win32;
 
 namespace DLSSGManager;
@@ -39,7 +40,7 @@ public partial class MainWindow
     private async void RunDeploy(GameEntry game)
     {
         if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
-        if (_saveFailure is not null && !SaveLibrary()) return;
+        if (Management.SaveFailure is not null && !SaveLibrary()) return;
 
         _busy = true;
         BatchStatusText.Text = Loc.T("Deploy.Starting", game.Name);
@@ -51,10 +52,8 @@ public partial class MainWindow
 
             if (protection.HasKernelAntiCheat)
             {
-                var body = Loc.T("Anti.OverrideBody", game.Name, protection.Products, protection.Evidence);
-
-                var answer = MessageBox.Show(body, Loc.T("Anti.OverrideTitle"), MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning, MessageBoxResult.No);
+                var answer = MessageBox.Show(ProtectionViewModel.OverridePrompt(game), Loc.T("Anti.OverrideTitle"),
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
                 if (answer != MessageBoxResult.Yes)
                 {
                     _log.Write(Loc.T("Anti.CancelLog", game.Name, protection.Summary, protection.Evidence));
@@ -119,7 +118,7 @@ public partial class MainWindow
     private async void RunRestore(GameEntry game)
     {
         if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
-        if (_saveFailure is not null && !SaveLibrary()) return;
+        if (Management.SaveFailure is not null && !SaveLibrary()) return;
 
         _busy = true;
         BatchStatusText.Text = Loc.T("Restore.Starting", game.Name);
@@ -145,14 +144,6 @@ public partial class MainWindow
             BatchStatusText.Text = "";
         }
     }
-
-    // ---- batch --------------------------------------------------------------
-
-    private async void DeployAll_Click(object sender, RoutedEventArgs e) =>
-        await RunBatchAsync(GameList.Items.Cast<GameEntry>().Where(g => g.BatchSelected).ToList(), false);
-
-    private async void RestoreAll_Click(object sender, RoutedEventArgs e) =>
-        await RunBatchAsync(GameList.Items.Cast<GameEntry>().Where(g => g.BatchSelected).ToList(), true);
 
     // ---- scanning -----------------------------------------------------------
 
