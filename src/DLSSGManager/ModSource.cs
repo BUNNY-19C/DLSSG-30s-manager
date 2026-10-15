@@ -41,6 +41,14 @@ public sealed class ModSource
 
     public const string IniName = "dlssg_sm86.ini";
     public const string LogDirName = "dlssg_sm86";
+    public static readonly string[] RequiredRuntimeFiles =
+    {
+        "dlssg_sm86/backend/sm86_backend.dll", "dlssg_sm86/runtime/nvngx_dlssg.dll",
+        "dlssg_sm86/kernels/fg_kernels.dll", "dlssg_sm86/xefg/xefg_kernels.dll",
+    };
+    public static readonly string[] SuperResolutionFiles =
+        { "dlssg_sm86/sr/nvngx_dlss.dll", "dlssg_sm86/sr/sr_kernels.dll" };
+    public static IEnumerable<string> RuntimeFiles => RequiredRuntimeFiles.Concat(SuperResolutionFiles);
 
     /// <summary>Folder holding the entry points other than version.dll, published and imported alike.</summary>
     public const string AltDirName = "altnative";
@@ -93,7 +101,13 @@ public sealed class ModSource
                 ? Loc.T("ModSource.IniMissingAndNoDll", IniName)
                 : Loc.T("ModSource.NoDll");
 
-        IsValid = (Proxies.Count > 0 || ImportedProxies.Count > 0) && File.Exists(iniPath);
+        if (UsesRuntimeDirectory)
+        {
+            var missing = RequiredRuntimeFiles.Where(p => !File.Exists(Path.Combine(Root, p))).ToArray();
+            if (missing.Length > 0) ValidationMessage = Loc.T("Fetch.Incomplete", Loc.Join(missing));
+        }
+        IsValid = (Proxies.Count > 0 || ImportedProxies.Count > 0) && File.Exists(iniPath) &&
+            (!UsesRuntimeDirectory || RequiredRuntimeFiles.All(p => File.Exists(Path.Combine(Root, p))));
         if (IsValid) Version = ReadReleaseLabel(root) ?? Loc.T("ModSource.UnknownVersion");
     }
 
@@ -135,6 +149,17 @@ public sealed class ModSource
     /// set the local payload actually reads — writing the other set would be writing dead keys.
     /// </summary>
     public bool IsLegacySchema => IniText.Contains("Router=", StringComparison.OrdinalIgnoreCase);
+    public bool UsesRuntimeDirectory => IniText.Contains("[DLSSG]", StringComparison.OrdinalIgnoreCase);
+    public bool SupportsSuperResolution => SuperResolutionFiles.All(p => File.Exists(Path.Combine(Root, p)));
+    public bool RequiresSingleProxy => IsLegacySchema || UsesRuntimeDirectory;
+    public IEnumerable<string> DeployableRuntimeFiles => UsesRuntimeDirectory
+        ? RuntimeFiles.Where(p => File.Exists(Path.Combine(Root, p))) : Array.Empty<string>();
+
+    public string? ConfigurationError(GameProfile profile) => BuildCatalog.ConfigurationError(profile) ??
+        (!UsesRuntimeDirectory && (profile.Engine != "DLSS" || profile.SuperResolution || profile.Preset == "C" || profile.FrameTiming)
+            ? Loc.T("Manage.Need040") :
+         UsesRuntimeDirectory && profile.SuperResolution && !SupportsSuperResolution
+            ? Loc.T("Manage.NeedFullPackage") : null);
 
     public string IniText
     {

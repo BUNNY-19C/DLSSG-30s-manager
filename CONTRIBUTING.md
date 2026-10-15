@@ -2,7 +2,7 @@
 
 感谢愿意帮忙。本项目的核心是"安全地改动别人的游戏目录"，所以对正确性的要求高于对功能数量的要求。
 
-先说清楚一件事：**本项目的代码、文案和文档由 AI 生成**，维护者负责真机实测与发布。这也是为什么测试写得比代码还多——AI 产出需要能自动验证的护栏。提 PR 时请以"能不能通过全量测试、结论有没有实测支撑"为准，而不是以文风或结构是否顺手为准。
+先说清楚一件事：**本项目的代码、文案和文档由 AI 生成**，维护者负责需求确认与发布。提 PR 时请说明实际行为、改动原因及影响范围。
 
 **接手开发先读 [docs/HANDOVER.md](docs/HANDOVER.md)**：代码地图、关键决策的来龙去脉（为什么必须 DynamicResource、为什么不能用 ContinueWith、代理共存语义在 0.3.3 前后有何不同）、上游更新时的核对清单，以及一批踩过的坑。
 
@@ -10,42 +10,26 @@
 
 - .NET 8 SDK
 - Windows（项目使用 WPF，且大量功能依赖 Windows API）
-- 如需编译安装包：[Inno Setup 6](https://jrsoftware.org/isdl.php)
 
-## 构建与测试
+## 构建
 
 ```bash
 dotnet build -c Release
 
-# 全量测试。未获取 Mod 文件时，依赖它们的用例会自动跳过
-./test/Harness/bin/Release/net8.0-windows/Harness.exe
-
-# 获取 Mod 文件（约 101 MB，写入项目的 mod 目录）
-./test/Harness/bin/Release/net8.0-windows/Harness.exe --fetch
-
-# 只扫描本机游戏并报告反作弊情况，不改动任何文件
-./test/Harness/bin/Release/net8.0-windows/Harness.exe --scan "D:\Games\SomeGame"
+# 获取 Mod 文件，使用程序自身的下载入口
+dotnet run --project src/DLSSGManager -c Release -- --fetch --silent
 ```
 
-测试会把数据目录隔离到临时位置（通过 `DLSSGMANAGER_HOME` 环境变量），不会碰你真实的 `library.json` 和 `manager.log`。
+## 构建绿色版
 
-## 打包
+后续只发布 Windows x64 自包含单文件绿色版，统一使用 `Portable` 发布配置。
 
 ```bash
 # 单文件 exe（自包含，目标机器无需装 .NET）
-dotnet publish src/DLSSGManager/DLSSGManager.csproj \
-  -c Release -r win-x64 --self-contained true \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-  -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile=Portable
 ```
 
-安装包用 [Inno Setup 6](https://jrsoftware.org/isdl.php) 编译（`installer/languages/` 下的简体中文语言文件随仓库提供，Inno 安装包未内置）：
-
-```powershell
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.9.3 installer\setup.iss
-```
-
-产物在 `dist/`。推 `v*` 标签（例如 `git tag v1.9.3 && git push origin v1.9.3`）会由 GitHub Actions 自动完成构建、测试、打包并创建 Release，附两个 exe 与 `SHA256SUMS.txt`。
+产物为 `publish/DLSSGManager.exe`，无需安装或另装 .NET。推 `v*` 标签（例如 `git tag v1.9.3 && git push origin v1.9.3`）会由 GitHub Actions 使用同一配置构建绿色版，并创建 Release，附程序与 `SHA256SUMS.txt`。
 
 ## 改动前的建议
 
@@ -53,18 +37,14 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj \
 
 - `DeploymentService` 的删除判据（标了"只删自己的文件"，改动会直接影响用户数据安全）
 - `AntiCheat` 的识别规则（误报会让用户错过可用的游戏，漏报会让用户踩坑）
-- `ModSourceLocator` 的路径选择（安装版与绿色版的行为差异）
+- `ModSourceLocator` 的路径选择（程序目录、仓库目录与用户目录的优先级）
 - `Shell` / `PathGuard`（外壳调用的信任边界）
 
 ## 提交改动
 
-1. **补测试。** 修 bug 时先写一个能复现的用例；加功能时覆盖主要分支。测试在 `test/Harness/Program.cs`，按 `Section` 分组。
+1. **写清改动理由。** 提交信息里说明*为什么*改，而不只是改了*什么*。如果修的是行为问题，附上复现方式。
 
-2. **跑全量测试。** 提交前确认没有失败项。
-
-3. **写清改动理由。** 提交信息里说明*为什么*改，而不只是改了*什么*。如果修的是行为问题，附上复现方式。
-
-4. 一个提交做一件事。不要把重构和新功能混在一起。
+2. 一个提交做一件事。不要把重构和新功能混在一起。
 
 ## 关于兼容性数据
 

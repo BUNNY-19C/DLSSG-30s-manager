@@ -93,6 +93,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void BuildLocalizedCombos()
     {
+        DownloadTargetText.Text = Loc.T("Manage.DownloadTarget", ModFetcher.SupportedRelease, BuildCatalog.BundledRuntimeVersion);
         var frames = FrameCombo.SelectedValue;
         FrameCombo.ItemsSource = new[]
         {
@@ -502,7 +503,7 @@ public partial class MainWindow : Window
             ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.AvailableProxies))
             : source.ValidationMessage;
 
-        ApplySettingsSchema(source.IsLegacySchema);
+        ApplySettingsSchema(source.IsLegacySchema, source.UsesRuntimeDirectory);
 
         if (!source.IsValid) _log.Write(Loc.T("Fetch.IncompleteLog", source.ValidationMessage));
     }
@@ -514,10 +515,13 @@ public partial class MainWindow : Window
     /// KernelImage / HardwareBilinear), and the manager only writes keys the template defines. Leaving
     /// the other set on screen would offer controls that silently do nothing.
     /// </summary>
-    private void ApplySettingsSchema(bool legacy)
+    private void ApplySettingsSchema(bool legacy, bool runtimeDirectory = false)
     {
         ModernSettings.Visibility = legacy ? Visibility.Collapsed : Visibility.Visible;
         LegacySettings.Visibility = legacy ? Visibility.Visible : Visibility.Collapsed;
+        Runtime040Settings.Visibility = runtimeDirectory ? Visibility.Visible : Visibility.Collapsed;
+        Runtime040Advanced.Visibility = runtimeDirectory ? Visibility.Visible : Visibility.Collapsed;
+        PresetCOption.Visibility = runtimeDirectory ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateMod_Click(object sender, RoutedEventArgs e)
@@ -787,9 +791,8 @@ public partial class MainWindow : Window
 
         var deployed = game.Deployment is not null;
         RestoreButton.IsEnabled = deployed;
-        AdoptButton.IsEnabled = !deployed || game.Status == GameStatus.Modified;
         OpenLogButton.IsEnabled = game.RenderDir is not null &&
-                                  Directory.Exists(Path.Combine(game.RenderDir, ModSource.LogDirName));
+                                  Directory.Exists(Path.Combine(game.RenderDir, ModSource.LogDirName, "logs"));
 
         // Deployment stays available on games with a kernel anti-cheat; RunDeploy warns and asks for
         // confirmation first. The scan cannot know whether this game's protection lets a given entry
@@ -865,15 +868,27 @@ public partial class MainWindow : Window
 
     // ---- status -------------------------------------------------------------
 
+    private void ApplyGameCheck(GameEntry game, DeploymentService.GameCheck check)
+    {
+        var adopted = game.Deployment is null && check.Adoption is not null;
+        DeploymentService.Apply(game, check);
+        if (adopted)
+        {
+            _log.Write(Loc.T("Adopt.Done", game.Name));
+            _log.Write(Loc.T("Adopt.Note"));
+        }
+    }
+
     private async void Check_Click(object sender, RoutedEventArgs e)
     {
         var game = Selected;
-        if (game is null || _busy || _statusRefreshRunning) return;
+        if (game is null || GameWorkRunning) return;
         _busy = true;
         try
         {
             var check = await Task.Run(() => DeploymentService.Evaluate(game));
-            DeploymentService.Apply(game, check);
+            ApplyGameCheck(game, check);
+            SaveLibrary();
             UpdateStatusCard();
             _log.Write(Loc.T("Status.CheckResult", game.Name, game.StatusText, game.StatusDetail));
         }
@@ -905,7 +920,7 @@ public partial class MainWindow : Window
             var results = await Task.Run(() =>
                 games.Select(g => (Game: g, Check: DeploymentService.Evaluate(g))).ToList());
 
-            foreach (var (game, check) in results) DeploymentService.Apply(game, check);
+            foreach (var (game, check) in results) ApplyGameCheck(game, check);
 
             SaveLibrary();
             UpdateStatusCard();

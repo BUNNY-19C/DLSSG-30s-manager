@@ -6,9 +6,6 @@ namespace DLSSGManager;
 /// The version shown in the title bar and the header badge. Read from the build's
 /// InformationalVersion: release builds get it from the git tag (-p:Version in the workflow), local
 /// builds from the csproj Version, which is bumped in the same commit as the release.
-///
-/// In its own file because the console test project compiles a whitelist of source files and must
-/// not pull in the WPF application class.
 /// </summary>
 public static class AppVersion
 {

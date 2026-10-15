@@ -44,7 +44,7 @@ public sealed class GameProfile : Observable
     private string _kernelImage = "PTX";
     private bool _hardwareBilinear;
     private bool _enabled = true;
-    private int _optimizedTier = 1;
+    private int _optimizedTier = 2;
     private bool? _optimized;
     private string _preset = "Auto";
     private int _maxGeneratedFrames = 3;
@@ -52,13 +52,29 @@ public sealed class GameProfile : Observable
     private bool _diagnostics;
     private string _runtimeModel = "310.9";
     public string RuntimeModel { get => _runtimeModel; set => Set(ref _runtimeModel, value); }
+    private string _engine = "DLSS";
+    private string _flowResolution = "Middle";
+    private bool _useHudless = true;
+    private bool _superResolution;
+    private bool _frameTiming;
+    public string Engine
+    {
+        get => _engine;
+        set { if (Set(ref _engine, value)) { Raise(nameof(UsesDlss)); Raise(nameof(UsesXeSS)); } }
+    }
+    public string FlowResolution { get => _flowResolution; set => Set(ref _flowResolution, value); }
+    public bool UseHudless { get => _useHudless; set => Set(ref _useHudless, value); }
+    public bool SuperResolution { get => _superResolution; set => Set(ref _superResolution, value); }
+    public bool FrameTiming { get => _frameTiming; set => Set(ref _frameTiming, value); }
+    [JsonIgnore] public bool UsesDlss => Engine != "XeSS";
+    [JsonIgnore] public bool UsesXeSS => Engine == "XeSS";
 
     /// <summary>0.3.0: frame generation on (bundled runtime) or off (the game's own DLSSG loads).</summary>
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
 
     /// <summary>
     /// 0.3.3: the consistency tier — how far the generated image may move from the official runtime.
-    /// 0 stock, 1 bit-identical speedups (default, recommended), 2 lossy ~50 dB (310.9 only),
+    /// 0 stock, 1 bit-identical speedups, 2 lossy image kernels (0.4.0 factory default),
     /// 3 all lossy (fastest). Replaces the 0.3.0 boolean <see cref="Optimized"/>.
     /// </summary>
     public int OptimizedTier { get => _optimizedTier; set => Set(ref _optimizedTier, value); }
@@ -104,6 +120,11 @@ public sealed class GameProfile : Observable
         MaxGeneratedFrames = MaxGeneratedFrames,
         LogLevel = LogLevel,
         Diagnostics = Diagnostics,
+        Engine = Engine,
+        FlowResolution = FlowResolution,
+        UseHudless = UseHudless,
+        SuperResolution = SuperResolution,
+        FrameTiming = FrameTiming,
     };
 
     public void CopyFrom(GameProfile other)
@@ -118,6 +139,11 @@ public sealed class GameProfile : Observable
         MaxGeneratedFrames = other.MaxGeneratedFrames;
         LogLevel = other.LogLevel;
         Diagnostics = other.Diagnostics;
+        Engine = other.Engine;
+        FlowResolution = other.FlowResolution;
+        UseHudless = other.UseHudless;
+        SuperResolution = other.SuperResolution;
+        FrameTiming = other.FrameTiming;
     }
 }
 
@@ -228,7 +254,7 @@ public sealed class GameEntry : Observable
     /// an "all clear" notice is noise, and any wording next to a warning icon reads as bad news.
     ///
     /// Exposed as a bool rather than a Visibility so this model stays free of WPF types; the view
-    /// converts it. That keeps the deployment logic testable from a plain console project.
+    /// converts it. That keeps the deployment logic independent of the presentation framework.
     /// </summary>
     [JsonIgnore]
     public bool ShowAntiCheatBanner => Protection?.HasKernelAntiCheat == true;

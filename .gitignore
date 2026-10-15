@@ -4,9 +4,6 @@
 /dist/
 /publish/
 
-# 安装包编译中间产物
-/installer/Output/
-
 # Mod 文件源：第三方版权作品，不随本仓库分发。
 #
 # 这些是 dlssg_for_sm86 发布的二进制，其 THIRD_PARTY_NOTICES.txt 说明 NVIDIA 运行时与

@@ -435,12 +435,11 @@
                                    Foreground="{DynamicResource BadgeOkText}" />
                     </Border>
                     <StackPanel Grid.Column="3" Orientation="Horizontal">
-                    <ComboBox x:Name="DownloadBuildCombo" Width="130" Margin="10,0,0,0" SelectedValuePath="Tag"
-                              SelectionChanged="DownloadBuild_SelectionChanged" ToolTip="{loc:Tr Manage.DownloadBuild}"
-                              AutomationProperties.Name="{loc:Tr Manage.DownloadBuild}">
-                        <ComboBoxItem Tag="310.9" Content="310.9 · 6X" />
-                        <ComboBoxItem Tag="310.1" Content="310.1 · 4X" />
-                    </ComboBox>
+                    <Border Background="{DynamicResource InputBackground}" BorderBrush="{DynamicResource InputBorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="10,0,0,0"
+                            VerticalAlignment="Center" ToolTip="{loc:Tr Manage.DownloadBuild}">
+                        <TextBlock x:Name="DownloadTargetText" FontSize="12" />
+                    </Border>
                     <Button x:Name="UpdateModButton" Content="{loc:Tr Toolbar.UpdateMod}"
                             Style="{StaticResource ToolButton}" Padding="10,5" FontSize="12" Margin="10,0,0,0"
                             Click="UpdateMod_Click" ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
@@ -544,6 +543,29 @@
                     <ListBox x:Name="GameList" Grid.Row="1" Background="Transparent" BorderThickness="0"
                              Margin="8,0,8,6" SelectionChanged="GameList_SelectionChanged"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <!-- Keep the current theme when busy disables the list; the stock template
+                             replaces its background with a system brush in the disabled state. -->
+                        <ListBox.Template>
+                            <ControlTemplate TargetType="ListBox">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        SnapsToDevicePixels="True">
+                                    <ScrollViewer x:Name="ListContent" Focusable="False"
+                                                  Padding="{TemplateBinding Padding}"
+                                                  CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                                                  HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                                  VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
+                                        <ItemsPresenter SnapsToDevicePixels="True" />
+                                    </ScrollViewer>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="ListContent" Property="Opacity" Value="0.6" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ListBox.Template>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="0" />
@@ -683,8 +705,6 @@
                                                 Margin="0,0,6,8" Click="Deploy_Click" />
                                         <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
                                                 Margin="0,0,6,8" Click="Restore_Click" />
-                                        <Button x:Name="AdoptButton" Content="{loc:Tr Action.Adopt}" Style="{StaticResource ToolButton}"
-                                                Margin="0,0,6,8" Click="Adopt_Click" />
                                     </WrapPanel>
                                     <WrapPanel>
                                         <Button Content="{loc:Tr Action.Check}" Style="{StaticResource ToolButton}"
@@ -755,8 +775,8 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                         <TextBlock Text="{loc:Tr Manage.GameBuild}" Style="{StaticResource FieldLabel}" />
                                         <ComboBox x:Name="RuntimeBuildCombo" Grid.Column="1" SelectedValuePath="Tag" SelectedValue="{Binding Profile.RuntimeModel, Mode=TwoWay}">
-                                            <ComboBoxItem Tag="310.9" Content="310.9 · 6X" />
-                                            <ComboBoxItem Tag="310.1" Content="310.1 · 4X" />
+                                            <ComboBoxItem Tag="310.9" Content="310.9.16 · 6X" />
+                                            <ComboBoxItem Tag="310.1" Content="{loc:Tr Manage.BuildArchive}" />
                                         </ComboBox>
                                     </Grid>
                                     <TextBlock x:Name="BuildWarningText" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarnBrush}" Margin="0,0,0,8" />
@@ -772,6 +792,30 @@
                                         <CheckBox IsChecked="{Binding Profile.Enabled, Mode=TwoWay}" Margin="0,2,0,8">
                                             <TextBlock Text="{loc:Tr Detail.Enabled}" TextWrapping="Wrap" />
                                         </CheckBox>
+                                        <StackPanel x:Name="Runtime040Settings" Visibility="Collapsed">
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{loc:Tr Detail.Engine}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding Profile.Engine, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="DLSS" /><ComboBoxItem Content="XeSS" />
+                                                </ComboBox>
+                                            </Grid>
+                                            <TextBlock Text="{loc:Tr Detail.XeSSNote}" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" Margin="120,0,0,8"
+                                                       Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}" />
+                                            <Grid Margin="0,0,0,8" Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{loc:Tr Detail.FlowResolution}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding Profile.FlowResolution, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="Coarse" /><ComboBoxItem Content="Middle" /><ComboBoxItem Content="Fine" />
+                                                </ComboBox>
+                                            </Grid>
+                                            <CheckBox Content="{loc:Tr Detail.UseHudless}" IsChecked="{Binding Profile.UseHudless, Mode=TwoWay}" Margin="0,0,0,8"
+                                                      Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}" />
+                                            <CheckBox x:Name="SuperResolutionCheck" IsChecked="{Binding Profile.SuperResolution, Mode=TwoWay}" Margin="0,0,0,8">
+                                                <TextBlock Text="{loc:Tr Detail.SuperResolution}" TextWrapping="Wrap" />
+                                            </CheckBox>
+                                            <TextBlock Text="{loc:Tr Detail.SuperResolutionNote}" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8" />
+                                        </StackPanel>
                                         <!-- 0.3.3: Optimized is a 0-3 consistency tier, not a boolean. The
                                              items are built in code (BuildLocalizedCombos) because their
                                              labels are translated and must follow the interface language. -->
@@ -782,6 +826,7 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{loc:Tr Detail.OptimizedTier}" Style="{StaticResource FieldLabel}" />
                                             <ComboBox x:Name="TierCombo" Grid.Column="1"
+                                                      IsEnabled="{Binding Profile.UsesDlss}"
                                                       DisplayMemberPath="Text" SelectedValuePath="Value"
                                                       SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
                                                       ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
@@ -793,6 +838,7 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
                                             <ComboBox x:Name="FrameCombo" Grid.Column="1"
+                                                      IsEnabled="{Binding Profile.UsesDlss}"
                                                       DisplayMemberPath="Text" SelectedValuePath="Value"
                                                       SelectedValue="{Binding Profile.MaxGeneratedFrames, Mode=TwoWay}" />
                                         </Grid>
@@ -860,13 +906,20 @@
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
                                                 <ComboBox x:Name="PresetCombo" Grid.Column="1" SelectedValuePath="Content"
+                                                          IsEnabled="{Binding Profile.UsesDlss}"
                                                           SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
                                                           ToolTip="{loc:Tr Detail.PresetTip}">
                                                     <ComboBoxItem Content="Auto" />
                                                     <ComboBoxItem Content="A" />
                                                     <ComboBoxItem Content="B" />
+                                                    <ComboBoxItem x:Name="PresetCOption" Content="C" Visibility="Collapsed" />
                                                 </ComboBox>
                                             </Grid>
+                                        </StackPanel>
+                                        <StackPanel x:Name="Runtime040Advanced" Visibility="Collapsed" Margin="0,0,0,8">
+                                            <CheckBox IsChecked="{Binding Profile.FrameTiming, Mode=TwoWay}">
+                                                <TextBlock Text="{loc:Tr Detail.FrameTiming}" TextWrapping="Wrap" />
+                                            </CheckBox>
                                         </StackPanel>
                                         <!-- Level 键在 0.2.x 与 0.3.x 模板里都存在，所以不做 schema 门控。 -->
                                         <Grid>

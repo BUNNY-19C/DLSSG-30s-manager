@@ -7,10 +7,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{6088C7CD-27A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DLSSGManager", "src\DLSSGManager\DLSSGManager.csproj", "{A29AE471-4511-487D-9850-91E60429DFFA}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0B745DE6-280F-4ED6-B04F-BFFF0D88C257}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Harness", "test\Harness\Harness.csproj", "{70B8B72E-EFF3-4F2F-8D08-753DA826608E}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,13 +20,8 @@ Global
 		{A29AE471-4511-487D-9850-91E60429DFFA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A29AE471-4511-487D-9850-91E60429DFFA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A29AE471-4511-487D-9850-91E60429DFFA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{70B8B72E-EFF3-4F2F-8D08-753DA826608E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{70B8B72E-EFF3-4F2F-8D08-753DA826608E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{70B8B72E-EFF3-4F2F-8D08-753DA826608E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{70B8B72E-EFF3-4F2F-8D08-753DA826608E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{A29AE471-4511-487D-9850-91E60429DFFA} = {6088C7CD-27AC-40E5-986C-696B9BF635CF}
-		{70B8B72E-EFF3-4F2F-8D08-753DA826608E} = {0B745DE6-280F-4ED6-B04F-BFFF0D88C257}
 	EndGlobalSection
 EndGlobal

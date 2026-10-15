@@ -50,7 +50,7 @@ public static class ModSourceLocator
     /// </summary>
     public static bool IsInstalledCopy() => IsInstalledCopyIn(AppContext.BaseDirectory);
 
-    /// <summary>Testable form of <see cref="IsInstalledCopy"/>, checking a specific folder.</summary>
+    /// <summary>Checks whether a specific folder contains an installed copy.</summary>
     public static bool IsInstalledCopyIn(string directory)
     {
         try
@@ -91,7 +91,7 @@ public static class ModSourceLocator
 
     /// <summary>
     /// Picks the folder beside the program when it can be written to, otherwise the per-user
-    /// fallback. Separated out so the choice can be tested without relocating the executable.
+    /// fallback according to directory permissions.
     /// </summary>
     public static string PreferWritable(string besideProgram, string userFallback) =>
         IsWritable(besideProgram) ? besideProgram : userFallback;

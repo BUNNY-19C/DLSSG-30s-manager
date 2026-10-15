@@ -7,8 +7,8 @@ namespace DLSSGManager;
 /// Runtime string lookup with live language switching.
 ///
 /// Strings produced in code go through <see cref="T"/>. Text set in XAML binds through the indexer via
-/// <c>TrExtension</c> (declared in <c>TrExtension.cs</c>, which is WPF-only so this file stays usable
-/// from the console test project); raising a change for that indexer makes every bound element re-read
+/// <c>TrExtension</c> (declared in the WPF-specific <c>TrExtension.cs</c>); raising a change for that
+/// indexer makes every bound element re-read
 /// its string, so switching language updates the open window without a restart.
 /// </summary>
 public sealed class Loc : INotifyPropertyChanged
@@ -38,7 +38,7 @@ public sealed class Loc : INotifyPropertyChanged
 
     /// <summary>
     /// Looks up a key in the current language, falling back to the other table and then to the key
-    /// itself. Returning the key keeps a missing translation visible instead of blanking the UI.
+/// itself. Returning the key keeps a missing translation visible instead of blanking the UI.
     /// </summary>
     public static string T(string key)
     {

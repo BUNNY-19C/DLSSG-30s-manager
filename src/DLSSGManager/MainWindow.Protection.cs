@@ -48,7 +48,7 @@ public partial class MainWindow
         try
         {
             var check = await Task.Run(() => DeploymentService.Evaluate(game));
-            DeploymentService.Apply(game, check);
+            ApplyGameCheck(game, check);
         }
         catch (Exception ex)
         {

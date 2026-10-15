@@ -1,39 +1,28 @@
-## v1.10.0：游戏配置与构建管理
+## v1.11.0：适配上游 0.4.0
 
-- **保存与应用分开**：状态卡区分未保存、已保存待应用和已应用。保存配置只写管理库，应用才修改游戏文件。
-- **310.9 / 310.1 构建选择**：两套负载独立下载和保存；310.1 最高 4X、优化档位 0/1、Auto 预设。不支持的设置会提示，不会自动改写。
-- **更新更明确**：分别显示本地和游戏已部署版本；下载不自动覆盖游戏，可勾选有更新的游戏后统一应用。
-- **批量操作先勾选**：只处理当前可见的勾选项，逐项显示结果，可只重试失败项。隐藏的勾选项不会被普通批量操作处理。
-- **保存失败可重试**：持续显示错误并保留内存记录；批量保存失败会停止后续项。关闭窗口时可等待操作收尾，下载可取消后退出。
-- **界面整理**：游戏状态和主要动作置顶；名称搜索与状态筛选；高级设置、工具区、日志可折叠，日志折叠时保留最新结果摘要。
-- **兼容提示**：荒野、绝区零、异环的目录与前置文件检查，可自动建议或手动选择。
-- **构建切换**同步更新能匹配的备用代理，保留恢复记录；自定义备用代理无法匹配新构建时，提示先恢复再部署。
+- **完整支持 0.4.0 负载布局**：优先下载官方完整包，部署代理、INI 与 `dlssg_sm86/` 运行目录；升级时清理已确认归属的多余代理，逐文件记录并支持恢复。
+- **新增配置**：DLSS / XeSS 引擎、FG Lite 预设 C、XeSS 光流精度与无 HUD 输入、INT8 超分和逐帧 GPU 计时。新配置默认优化档位 2，保留已有游戏的档位。
+- **下载与版本显示修复**：修复下载更新时游戏列表出现白色背景的问题；分别显示 Mod 发布版本与运行库构建，明确下载目标，避免下载后版本看似未变。
+- **自动接管手工安装**：检查状态、启动刷新、扫描与添加游戏时，自动登记能识别的手工安装，移除手动接管按钮。已有管理记录与备份继续保留。
+- **仅提供绿色版**：移除安装包、测试项目与冒烟门禁，统一使用自包含单文件发布配置。
 
 ### 下载与升级
 
 | 文件 | 用法 |
 |---|---|
-| `DLSSGManager-1.10.0-setup.exe` | 安装包，可选路径与语言，带卸载程序 |
-| `DLSSGManager.exe` | 单文件绿色版，放到任意目录运行 |
-| `SHA256SUMS.txt` | 两个程序文件的 SHA256 校验值 |
+| `DLSSGManager.exe` | Windows x64 免安装绿色版，自带 .NET，放入可写目录运行 |
+| `SHA256SUMS.txt` | 程序文件的 SHA256 校验值 |
 
-两个版本都包含 .NET 运行时。安装阶段不联网，Mod 文件在首次启动时自动获取，也可从顶部手动下载。升级保留原有游戏库与恢复记录；旧部署记录缺少配置快照时会显示待应用，原有恢复功能仍可使用。
+Mod 文件单独下载，不包含在发行程序中。下载更新只更新本地负载；选择游戏并点击「应用到游戏」后，重启游戏使其生效。原有游戏库与恢复记录继续使用。
 
-310.9 保留原来的 `mod/` 目录，310.1 使用 `mod/variants/310.1/`。常规批量操作的范围从整个游戏库改为**可见且勾选的游戏**。
+上游 0.4.0 使用一个代理与完整运行目录，不要沿用旧版双代理方案。310.1 已停止下载，现有本地文件仍可使用与恢复；INT8 超分需要完整包中的 SR 文件。
 
-### 验证与使用注意
+### English
 
-- 本地回归 480 项通过；界面冒烟覆盖保存重试、部署/恢复、搜索/筛选、批量失败重试与关闭流程；310.1 真实下载和验签通过。
-- 游戏前置文件的存在检查不代表版本兼容或帧生成效果已验证，修改配置后需要重启游戏。
-- 内核级反作弊可能拦截代理并带来账号风险。管理器会检测并提示，部署需要明确确认。
-- 本工具负责部署与恢复；上游 Mod 文件单独下载，不包含在发行程序中。
+This release supports the upstream 0.4.0 payload layout, full-package downloads and per-file deployment/restoration of the runtime directory. It adds DLSS/XeSS selection, preset C, XeSS options, INT8 super resolution and per-frame GPU timing. New profiles default to optimization tier 2; existing tiers are preserved.
 
-## English
+It fixes the white game-list background during downloads and clarifies release versus runtime versions. Recognized manual installations are adopted automatically during status checks, with the manual adoption button removed. Existing library entries and backups are preserved.
 
-This release separates saving configuration from applying it to a game, adds independent 310.9 / 310.1 payload selection, and shows local and deployed versions separately. Batch operations process only visible checked games, report individual results, and can retry failed items. Save failures offer a persistent retry; closing waits for active work or cancels a download before exiting.
+Only the self-contained Windows x64 portable executable is provided. Installer packaging, test projects and smoke gates have been removed. Mod files are downloaded separately; apply updated files to each game and restart it. Upstream 0.4.0 requires one proxy and its runtime directory. Existing local 310.1 payloads remain usable and restorable, but are no longer downloaded.
 
-The interface adds search and status filters, collapsible tools, advanced settings and output, and guidance for Wilds, Zenless Zone Zero and NTE. Existing libraries and restore records are preserved; installations without a configuration snapshot show as pending application.
-
-Choose the installer or portable executable. Both include .NET. Setup does not download the Mod; the manager fetches it on first start. Game compatibility and frame-generation results still require testing in the game.
-
-**完整改动 / Full changelog:** https://github.com/BUNNY-19C/DLSSG-30s-manager/compare/v1.9.5...v1.10.0
+**完整改动 / Full changelog:** https://github.com/BUNNY-19C/DLSSG-30s-manager/compare/v1.10.0...v1.11.0

@@ -4,8 +4,7 @@ namespace DLSSGManager;
 /// The theme keys used for game status and the mod-source badge.
 ///
 /// Only names live here — the actual brushes come from the active theme dictionary. Keeping this free
-/// of WPF types lets the deployment model and the console test project reference a status colour
-/// without pulling in the presentation framework.
+/// of WPF types lets the deployment model reference a status colour without the presentation framework.
 /// </summary>
 public static class Palette
 {

@@ -73,7 +73,7 @@ public static class DeploymentService
     /// fails even for an untouched file. Only the two outcomes that mean "the bytes are as signed"
     /// are accepted; every other result, including a bad digest, is treated as unsigned.
     /// </summary>
-    public static X509Certificate2? ReadSignerCertificate(string path, out bool signatureIntact)
+    public static X509Certificate2? ReadSignerCertificate(string path, out bool signatureIntact, bool requireTrusted = false)
     {
         signatureIntact = false;
 
@@ -88,7 +88,7 @@ public static class DeploymentService
             return null;
         }
 
-        signatureIntact = IsSignatureIntact(path);
+        signatureIntact = IsSignatureIntact(path, requireTrusted);
         return cert;
     }
 
@@ -143,7 +143,7 @@ public static class DeploymentService
     /// Verifies that the file's signature matches its contents. Fails closed: anything other than
     /// "verified" or "verified but self-signed" counts as not intact.
     /// </summary>
-    private static bool IsSignatureIntact(string path)
+    private static bool IsSignatureIntact(string path, bool requireTrusted = false)
     {
         IntPtr filePtr = IntPtr.Zero;
         IntPtr dataPtr = IntPtr.Zero;
@@ -188,7 +188,7 @@ public static class DeploymentService
             {
                 // The bytes are as signed; only the chain is untrusted, which is inherent to a
                 // self-signed certificate. Callers confirm identity via the pinned thumbprint.
-                return true;
+                return !requireTrusted;
             }
 
             if (result == TRUST_E_NOSIGNATURE || result == TRUST_E_BAD_DIGEST)
@@ -288,7 +288,7 @@ public static class DeploymentService
     {
         var names = new List<string>(ModSource.KnownProxyNames);
         if (prev is not null)
-            names.AddRange(prev.Files.Select(f => Path.GetFileName(f.FileName)));
+            names.AddRange(prev.Files.Where(f => f.FileName == Path.GetFileName(f.FileName)).Select(f => f.FileName));
 
         return names.Where(n => !string.Equals(n, ModSource.IniName, StringComparison.OrdinalIgnoreCase))
                     .Distinct(StringComparer.OrdinalIgnoreCase);
@@ -385,7 +385,7 @@ public static class DeploymentService
             return r;
         }
 
-        var configurationError = BuildCatalog.ConfigurationError(game.Profile);
+        var configurationError = source.ConfigurationError(game.Profile);
         if (configurationError is not null || source.RuntimeModel != BuildCatalog.Normalize(game.Profile.RuntimeModel))
         {
             r.Fail(configurationError ?? Loc.T("Manage.BuildMismatch"));
@@ -443,6 +443,7 @@ public static class DeploymentService
         var iniText = IniTemplate.Render(source.IniText, game.Profile);
         var restoreFolder = Path.Combine(AppPaths.RestoreRoot, game.Id, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         var backups = new List<BackupItem>();
+        var runtimeWritten = new List<DeployedFile>();
         string? tmp = null;
         string? iniTmp = null;
 
@@ -459,7 +460,7 @@ public static class DeploymentService
             .Where(x => File.Exists(x.Path) && IsOurProxyAt(game.RenderDir, x.Name, prev))
             .ToList();
 
-        if (prev is not null && prev.RuntimeModel != source.RuntimeModel && !source.IsLegacySchema &&
+        if (prev is not null && prev.RuntimeModel != source.RuntimeModel && !source.RequiresSingleProxy &&
             redundantProxies.Any(p => !File.Exists(source.DllPath(p.Name))))
         {
             r.Fail(Loc.T("Manage.StandbyMismatch"));
@@ -468,12 +469,41 @@ public static class DeploymentService
 
         try
         {
+            // Check the entire runtime before modifying any game file. A missing or locked component
+            // must not remove an old installation's proxies halfway through an upgrade.
+            var runtimeFiles = source.DeployableRuntimeFiles.ToArray();
+            foreach (var name in runtimeFiles)
+            {
+                var dest = RuntimePath(game.RenderDir, name);
+                if (!File.Exists(dest)) continue;
+                using var probe = new FileStream(dest, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            }
+            foreach (var name in runtimeFiles)
+            {
+                var dest = RuntimePath(game.RenderDir, name);
+                if (File.Exists(dest) && !IsOurs(dest, RecordedHashFor(prev, name)))
+                    backups.Add(Backup(dest, restoreFolder, r, name));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                tmp = dest + ".dlssgtmp";
+                File.Copy(Path.Combine(source.Root, name), tmp, overwrite: true);
+                File.Move(tmp, dest, overwrite: true);
+                Unblock(dest);
+                runtimeWritten.Add(new DeployedFile { FileName = name, Sha256 = Sha256(dest), Size = new FileInfo(dest).Length });
+            }
+            // Changing back to a legacy source removes only runtime files the previous record owns.
+            foreach (var name in ModSource.RuntimeFiles.Except(runtimeFiles))
+            {
+                var dest = RuntimePath(game.RenderDir, name);
+                var hash = RecordedHashFor(prev, name);
+                if (hash is not null && File.Exists(dest) && Sha256(dest).Equals(hash, StringComparison.OrdinalIgnoreCase))
+                    File.Delete(dest);
+            }
             // Extra proxies of ours in the folder: on 0.2.x payloads two live pipelines crash, so
             // they are trimmed. On 0.3.3+ the loader runs them as standby forwarders by design (the
             // game loads whichever name it recognises first), and some games only respond to one
             // specific entry name — so there they stay, recorded with the deployment so a later
             // restore still removes every file we are responsible for.
-            if (source.IsLegacySchema)
+            if (source.RequiresSingleProxy)
             {
                 foreach (var (name, path) in redundantProxies)
                 {
@@ -555,7 +585,8 @@ public static class DeploymentService
                 },
             };
 
-            if (!source.IsLegacySchema)
+            game.Deployment.Files.AddRange(runtimeWritten);
+            if (!source.RequiresSingleProxy)
             {
                 foreach (var (name, path) in redundantProxies)
                 {
@@ -582,6 +613,13 @@ public static class DeploymentService
                     Loc.T(game.Profile.HardwareBilinear ? "Deploy.On" : "Deploy.Off"),
                     game.Profile.LogLevel));
             }
+            else if (source.UsesRuntimeDirectory)
+            {
+                r.Note(Loc.T("Detail.SettingSummary040", game.Profile.Engine,
+                    Loc.T(game.Profile.Enabled ? "Deploy.On" : "Deploy.Off"), game.Profile.OptimizedTier,
+                    game.Profile.Preset, game.Profile.UsesXeSS ? 2 : game.Profile.MaxGeneratedFrames + 1,
+                    Loc.T(game.Profile.SuperResolution ? "Deploy.On" : "Deploy.Off"), game.Profile.LogLevel));
+            }
             else
             {
                 r.Note(Loc.T("Detail.SettingSummaryModern",
@@ -601,6 +639,18 @@ public static class DeploymentService
         }
         catch (Exception ex)
         {
+            // A multi-file deployment may fail after writing some runtime components. Keep their
+            // hashes and displaced originals so a retry or Restore can still account for every write.
+            if (runtimeWritten.Count > 0)
+            {
+                game.Deployment ??= new DeploymentInfo { ProxyName = proxy };
+                var record = game.Deployment;
+                record.AppliedConfiguration = "";
+                record.Files = record.Files.Where(f => runtimeWritten.All(n => n.FileName != f.FileName))
+                    .Concat(runtimeWritten).ToList();
+                record.Backups = record.Backups.Where(b => backups.All(n => n.FileName != b.FileName))
+                    .Concat(backups).ToList();
+            }
             // A failed copy/move (locked file, full disk) must not leave a stray *.dlssgtmp in the
             // game folder — nothing else ever recognises or cleans those.
             foreach (var leftover in new[] { tmp, iniTmp })
@@ -615,20 +665,44 @@ public static class DeploymentService
         return r;
     }
 
-    private static BackupItem Backup(string path, string restoreFolder, OpResult r)
+    private static BackupItem Backup(string path, string restoreFolder, OpResult r, string? relativeName = null)
     {
         Directory.CreateDirectory(restoreFolder);
-        var stored = Path.Combine(restoreFolder, Path.GetFileName(path));
+        var name = relativeName ?? Path.GetFileName(path);
+        var stored = Path.Combine(restoreFolder, name);
+        Directory.CreateDirectory(Path.GetDirectoryName(stored)!);
         File.Copy(path, stored, overwrite: true);
         var item = new BackupItem
         {
-            FileName = Path.GetFileName(path),
+            FileName = name,
             StoredPath = stored,
             Sha256 = Sha256(stored),
             Size = new FileInfo(stored).Length,
         };
         r.Note(Loc.T("Deploy.BackupFile", item.FileName, item.Size / 1024));
         return item;
+    }
+
+    private static string RuntimePath(string root, string name)
+    {
+        if (!ModSource.RuntimeFiles.Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Unknown runtime file: " + name);
+        var path = Path.Combine(root, name);
+        var dir = Path.GetDirectoryName(path);
+        while (dir is not null && !string.Equals(dir, root.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+        {
+            if (Directory.Exists(dir) && (File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Runtime directory is a link: " + dir);
+            dir = Path.GetDirectoryName(dir);
+        }
+        return path;
+    }
+
+    private static void RemoveEmptyRuntimeDirectories(string root)
+    {
+        foreach (var dir in ModSource.RuntimeFiles.Select(p => Path.GetDirectoryName(RuntimePath(root, p))!)
+                     .Distinct(StringComparer.OrdinalIgnoreCase).Append(Path.Combine(root, ModSource.LogDirName)))
+            if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
     }
 
     public static OpResult Restore(GameEntry game, bool removeLogs)
@@ -656,9 +730,26 @@ public static class DeploymentService
 
         var prev = game.Deployment;
         var removed = 0;
+        var modernLayout = ModSource.RuntimeFiles.Any(p => File.Exists(Path.Combine(game.RenderDir, p))) ||
+            prev?.Files.Any(f => ModSource.RuntimeFiles.Contains(f.FileName)) == true ||
+            new ModSource(game.RenderDir).UsesRuntimeDirectory;
 
         try
         {
+            foreach (var name in ModSource.RuntimeFiles)
+            {
+                var path = RuntimePath(game.RenderDir, name);
+                if (!File.Exists(path)) continue;
+                var hash = RecordedHashFor(prev, name);
+                // NVIDIA signatures alone do not prove manager ownership; use the deployment hash.
+                if (IsOurs(path, hash))
+                {
+                    File.Delete(path);
+                    removed++;
+                    r.Note(Loc.T("Restore.Removed", name));
+                }
+                else r.Note(Loc.T("Restore.ProxyKept", name));
+            }
             // 1) The proxy we recorded; if there is no record, any project-signed DLL in a known entry name.
             // Scan the record's own entries as well as the known names: a proxy imported under its
             // own name appears in neither list alone. A stray proxy can be present (a name switch
@@ -738,6 +829,16 @@ public static class DeploymentService
                     }
 
                     var dest = Path.Combine(game.RenderDir, b.FileName);
+                    if (ModSource.RuntimeFiles.Contains(b.FileName))
+                    {
+                        dest = RuntimePath(game.RenderDir, b.FileName);
+                        if (File.Exists(dest))
+                        {
+                            r.Note(Loc.T("Restore.ProxyKept", b.FileName));
+                            continue;
+                        }
+                    }
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                     File.Copy(b.StoredPath, dest, overwrite: true);
                     removed++;
                     r.Note(Loc.T("Restore.BackupRestored", b.FileName));
@@ -746,13 +847,15 @@ public static class DeploymentService
 
             if (removeLogs)
             {
-                var logs = Path.Combine(game.RenderDir, ModSource.LogDirName);
+                var logs = Path.Combine(game.RenderDir, ModSource.LogDirName, modernLayout ? "logs" : "");
                 if (Directory.Exists(logs))
                 {
                     Directory.Delete(logs, recursive: true);
                     r.Note(Loc.T("Restore.LogsDeleted", ModSource.LogDirName));
                 }
             }
+
+            RemoveEmptyRuntimeDirectories(game.RenderDir);
 
             game.Deployment = null;
             r.Message = removed > 0 ? Loc.T("Restore.Done", removed) : Loc.T("Restore.None");
@@ -786,28 +889,14 @@ public static class DeploymentService
         }
     }
 
-    /// <summary>Takes over an installation that was copied in by hand, so the manager can restore it later.</summary>
-    public static OpResult Adopt(GameEntry game)
+    /// <summary>Records recognized manual files without changing the game directory.</summary>
+    private static DeploymentInfo ReadManualInstallation(string root, string proxy)
     {
-        var r = new OpResult();
-        if (!Directory.Exists(game.RenderDir))
-        {
-            r.Fail(Loc.T("Restore.NeedDir"));
-            return r;
-        }
-
-        var proxy = FindInstalledProxy(game.RenderDir);
-        if (proxy is null)
-        {
-            r.Fail(Loc.T("Adopt.NotFound"));
-            return r;
-        }
-
-        var proxyPath = Path.Combine(game.RenderDir, proxy);
-        var iniPath = Path.Combine(game.RenderDir, ModSource.IniName);
+        var proxyPath = Path.Combine(root, proxy);
+        var iniPath = Path.Combine(root, ModSource.IniName);
         var iniExists = File.Exists(iniPath);
 
-        game.Deployment = new DeploymentInfo
+        var deployment = new DeploymentInfo
         {
             ProxyName = proxy,
             ModVersion = (iniExists ? ModSource.ReadVersion(iniPath) : null) ?? Loc.T("ModSource.UnknownVersion"),
@@ -817,11 +906,18 @@ public static class DeploymentService
             RestoreFolder = "",
             Backups = new List<BackupItem>(),
         };
+        foreach (var name in ModSource.RuntimeFiles)
+        {
+            var path = RuntimePath(root, name);
+            if (!File.Exists(path)) continue;
+            var nvidia = name.EndsWith("/nvngx_dlss.dll") || name.EndsWith("/nvngx_dlssg.dll");
+            using var cert = ReadSignerCertificate(path, out var intact, requireTrusted: nvidia);
+            var expected = nvidia ? "NVIDIA Corporation" : "DLSSG";
+            if (intact && cert?.Subject.Contains(expected, StringComparison.OrdinalIgnoreCase) == true)
+                deployment.Files.Add(new DeployedFile { FileName = name, Sha256 = Sha256(path), Size = new FileInfo(path).Length });
+        }
 
-        r.Note(Loc.T("Adopt.Done", proxy) + (iniExists ? $" + {ModSource.IniName}" : Loc.T("Adopt.NoIni")));
-        r.Note(Loc.T("Adopt.Note"));
-        r.Message = Loc.T("Adopt.Done", proxy);
-        return r;
+        return deployment;
     }
 
     /// <summary>
@@ -829,7 +925,10 @@ public static class DeploymentService
     /// <see cref="Apply"/>, which lets the expensive filesystem work run off the UI thread while the
     /// property changes land on it.
     /// </summary>
-    public sealed record GameCheck(GameStatus Status, string Detail, ProtectionReport? Protection);
+    public sealed record GameCheck(GameStatus Status, string Detail, ProtectionReport? Protection)
+    {
+        public DeploymentInfo? Adoption { get; init; }
+    }
 
     /// <summary>
     /// Inspects a game folder and reports its state. Reads the filesystem but modifies nothing, so it
@@ -853,6 +952,21 @@ public static class DeploymentService
         var root = game.RenderDir;
         var prev = game.Deployment;
 
+        if (prev is null)
+        {
+            var found = FindInstalledProxy(root);
+            if (found is null)
+                return new GameCheck(GameStatus.NotDeployed, Loc.T("Status.NotDeployedDetail"), protection);
+
+            var adoption = ReadManualInstallation(root, found);
+            return EvaluateInstallation(root, adoption, protection) with { Adoption = adoption };
+        }
+
+        return EvaluateInstallation(root, prev, protection);
+    }
+
+    private static GameCheck EvaluateInstallation(string root, DeploymentInfo prev, ProtectionReport protection)
+    {
         // Since 0.3.3 several proxies of the project may share a folder by design: the first one the
         // game loads becomes active and the rest forward their exports without installing hooks, so
         // there is no second pipeline and no crash. Extra proxies are therefore reported as a note
@@ -864,18 +978,26 @@ public static class DeploymentService
             ? " " + Loc.T("Status.StandbyNote", liveProxies.Count - 1)
             : "";
 
-        if (prev is null)
-        {
-            var found = FindInstalledProxy(root);
-            return new GameCheck(GameStatus.NotDeployed,
-                found is null ? Loc.T("Status.NotDeployedDetail") : Loc.T("Status.ManualInstall", found) + standby,
-                protection);
-        }
-
         var proxyPath = Path.Combine(root, prev.ProxyName);
         var iniPath = Path.Combine(root, ModSource.IniName);
         var proxyOk = File.Exists(proxyPath);
         var iniOk = File.Exists(iniPath);
+
+        var runtimeFiles = prev.Files.Where(f => ModSource.RuntimeFiles.Contains(f.FileName)).ToArray();
+        var modern = runtimeFiles.Length > 0 || new ModSource(root).UsesRuntimeDirectory;
+        if (liveProxies.Count > 1 && modern)
+            return new GameCheck(GameStatus.Modified, Loc.T("Status.Multiple040"), protection);
+        if (modern)
+            foreach (var name in ModSource.RequiredRuntimeFiles)
+                if (!File.Exists(Path.Combine(root, name)))
+                    return new GameCheck(GameStatus.Missing, Loc.T("Status.MissingProxy", name), protection);
+        foreach (var file in runtimeFiles)
+        {
+            var path = Path.Combine(root, file.FileName);
+            if (!File.Exists(path)) return new GameCheck(GameStatus.Missing, Loc.T("Status.MissingProxy", file.FileName), protection);
+            if (!Sha256(path).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+                return new GameCheck(GameStatus.Modified, Loc.T("Status.RuntimeModified", file.FileName), protection);
+        }
 
         if (!proxyOk || !iniOk)
         {
@@ -911,6 +1033,7 @@ public static class DeploymentService
     /// <summary>Applies an evaluation's results. Call on the UI thread.</summary>
     public static void Apply(GameEntry game, GameCheck check)
     {
+        if (game.Deployment is null && check.Adoption is not null) game.Deployment = check.Adoption;
         if (check.Protection is not null) game.Protection = check.Protection;
         game.Status = check.Status;
         game.StatusDetail = check.Detail;

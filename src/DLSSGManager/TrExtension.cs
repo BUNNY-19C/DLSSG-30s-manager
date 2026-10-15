@@ -9,7 +9,7 @@ namespace DLSSGManager;
 ///
 /// Returns a binding rather than a fixed string so that changing the language propagates to the live
 /// window. Split into its own file because it is the only part of the localisation layer that needs
-/// WPF, which keeps <c>Localization.cs</c> usable from the console test project.
+/// WPF, keeping <c>Localization.cs</c> independent of the presentation framework.
 /// </summary>
 [MarkupExtensionReturnType(typeof(string))]
 public sealed class TrExtension : MarkupExtension

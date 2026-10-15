@@ -173,7 +173,7 @@ public static class Gpu
 
     /// <summary>
     /// Route decided from the product name alone. The name can be edited in the registry, so this
-    /// is a fallback and test path only — <see cref="Classify"/> is what the probe uses.
+    /// is a fallback only — <see cref="Classify"/> is what the probe uses.
     /// </summary>
     public static string RouteForAdapter(string adapterName) => RouteForFamily(FamilyFromName(adapterName));
 
@@ -437,7 +437,7 @@ public static class Gpu
         }
     }
 
-    /// <summary>Advice built from a name alone, used by tests and as a fallback.</summary>
+    /// <summary>Fallback advice built from a product name alone.</summary>
     public static string AdviceForAdapter(string adapterName, string driver) =>
         BuildAdvice(adapterName, driver, FamilyFromName(adapterName), false, null);
 

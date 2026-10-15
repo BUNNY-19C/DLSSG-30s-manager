@@ -32,7 +32,6 @@ public partial class MainWindow
             GameList.IsEnabled = !value;
             GameSearchBox.IsEnabled = !value;
             GameStatusFilter.IsEnabled = !value;
-            DownloadBuildCombo.IsEnabled = !value;
             LanguageCombo.IsEnabled = !value;
             ThemeCombo.IsEnabled = !value;
             ToolsPanel.IsEnabled = !value;
@@ -44,7 +43,6 @@ public partial class MainWindow
     private void InitializeManagement()
     {
         _managementReady = true;
-        DownloadBuildCombo.SelectedValue = BuildCatalog.Normalize(_data.DownloadBuild);
         ObserveGames();
         RememberSaved();
         _data.Games.CollectionChanged += GamesChanged;
@@ -138,20 +136,14 @@ public partial class MainWindow
         ConfigurationStatusText.Text = Loc.T(unsaved ? "Manage.Unsaved" : pending ? "Manage.Pending" : "Manage.Applied");
         SaveConfigurationButton.IsEnabled = !_busy && (unsaved || _saveFailure is not null);
         DeployButton.Content = Loc.T(game.Deployment is null ? "Action.Deploy" : "Manage.Apply");
-        BuildWarningText.Text = BuildCatalog.ConfigurationError(game.Profile) ?? "";
-        BuildWarningText.Visibility = BuildWarningText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         var source = CurrentSource(game);
+        BuildWarningText.Text = source.ConfigurationError(game.Profile) ?? "";
+        BuildWarningText.Visibility = BuildWarningText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         PayloadStatusText.Text = Loc.T("Manage.PayloadVersions", game.Profile.RuntimeModel,
             source.IsValid ? source.Version : Loc.T("Manage.NotDownloaded"),
             game.Deployment?.RuntimeModel is { Length: > 0 } build ? build : Loc.T("Common.Unknown"),
             game.Deployment?.ModVersion ?? "—");
         GuidanceText.Text = GameGuidance.Describe(game);
-    }
-
-    private void DownloadBuild_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_managementReady || DownloadBuildCombo.SelectedValue is not string build) return;
-        _data.DownloadBuild = build;
     }
 
     private void WindowClosing(object? sender, CancelEventArgs e)

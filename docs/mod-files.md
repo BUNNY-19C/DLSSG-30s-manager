@@ -1,97 +1,55 @@
-# 为什么仓库里没有 mod 文件
+# Mod 文件与获取方式
 
-运行管理器需要上游 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) 发布的文件：
+管理器从上游 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86/releases/tag/0.4.0) 获取 **0.4.0** 负载。二进制不提交到本仓库，也不随管理器程序分发；上游和 NVIDIA 材料的权利仍归各自权利人。
 
-```
+## 当前布局
+
+```text
 mod/
-├─ version.dll              ← 默认代理入口
-├─ dlssg_sm86.ini           ← 默认配置
-├─ altnative/               ← 四个备用入口
+├─ version.dll
+├─ dlssg_sm86.ini
+├─ altnative/                   # 上游 alternatives/ 下的五个备用入口
 │  ├─ winmm.dll
+│  ├─ dbghelp.dll
 │  ├─ dinput8.dll
-│  ├─ winhttp.dll
-│  └─ dxgi.dll
-└─ config/presets/          ← 两档预设（可选）
-   ├─ sm86-default.ini
-   └─ sm86-performance.ini
+│  ├─ dxgi.dll
+│  └─ d3d12.dll
+└─ dlssg_sm86/
+   ├─ backend/sm86_backend.dll
+   ├─ runtime/nvngx_dlssg.dll
+   ├─ kernels/fg_kernels.dll
+   ├─ xefg/xefg_kernels.dll
+   └─ sr/                      # 仅 Release 完整包包含
+      ├─ nvngx_dlss.dll
+      └─ sr_kernels.dll
 ```
 
-`altnative/` 里还可以放**你自己添加的入口 DLL**（例如你自己编译的构建）：管理器不会从上游下载它们，但你在界面上点「添加代理 DLL…」时就会按原文件名放进这个目录，之后和自带入口一样可部署、可恢复。
+部署到游戏时只选择**一个**代理，加上 INI 和运行目录；不会复制全部备用入口。
 
-0.3.0 发布 6 个入口：根目录的 `version.dll` 与 `alternatives\` 下的 5 个。管理器把源文件夹里的 `alternatives\` 映射到自己的 `altnative\`，本地布局不变。旧版本发布过的 `winhttp.dll` 会在更新时被清理掉（只删带本项目签名的文件），免得它看起来像是你自己加的入口。详见 [../extra-proxies/README.md](../extra-proxies/README.md)。
+## 获取
 
-这些文件**不提交到本仓库**，原因有两个。
+首次启动自动下载，之后可点「下载 / 更新 Mod 文件」。默认优先尝试官方 Release 完整包及其加速源，下载约 77 MiB，含超分文件；逐文件源下载约 37 MiB，仅支持插帧与 XeSS，不能开启 INT8 超分。
 
-## 1. 授权
+下载与游戏应用分开：先更新本地负载，再选择游戏并应用。已有 310.1 负载保留在 `mod/variants/310.1/`，可本地使用或恢复；0.4.0 已停止提供该构建，管理器不再下载它。
 
-它们是 mod 作者编译发布的二进制，不是本项目的代码。其 `THIRD_PARTY_NOTICES.txt` 里写明：
+命令行可运行同一下载器：
 
-> The NVIDIA runtime DLL and extracted/recompiled NVIDIA kernel assets are separate
-> third-party material from this user's local installation; they are not relicensed by LICENSE.md.
-
-也就是 NVIDIA 运行时和从中提取、重编译的内核资源**不在该项目可再授权的范围内**。本仓库因此不转发这些材料——需要的人从上游获取即可。
-
-## 2. 体积
-
-五个 DLL 合计约 75 MB，放进 git 历史既臃肿，也意味着每次上游更新都要多一份副本。
-
-## 怎么获取
-
-**方法一：程序自动获取（推荐）**
-
-安装包：安装阶段**不下载**（安装程序不联网，免得下到一半失败留下半成品）。装完后第一次启动管理器，它会自动检测上游最新版本并取回，日志里会写明版本号（例如「上游最新版本：Native 0.2.4」）。
-
-图形界面：启动管理器，在顶部选择 **310.9 / 310.1**，再点「**下载 / 更新 Mod 文件**」。可指定下载源，或由自动模式依次尝试可用源。下载完成后只更新本地负载，游戏文件要单独应用。
-
-310.9 保留原来的 `mod/` 布局；310.1 保存在 `mod/variants/310.1/`。每套下载写入 `.manager-build` 标记。310.1 的 DLL 来自上游 `310.1/`，INI 与说明共用根目录版本，验签规则不变。游戏配置独立选择构建，状态卡分别显示本地与已部署版本。
-
-命令行：如果你只想要文件、暂时不构建界面，可以用测试工具里的同一个下载器：
-
-```bash
-cd test/Harness
-dotnet build -c Release
-./bin/Release/net8.0-windows/Harness.exe --fetch
+```powershell
+dotnet run --project src/DLSSGManager -c Debug -- --fetch --silent
 ```
 
-它写入的目录与界面按钮一致，之后运行不带参数的测试即可执行全部用例。
+手动导入时，从上游 Release 下载完整 ZIP，把 `version.dll`、`dlssg_sm86.ini`、`dlssg_sm86/` 放入 `mod/`，把 `alternatives/` 的 DLL 放入 `mod/altnative/`。不要直接使用 GitHub 的源码 ZIP 来获取超分文件。
 
-如果检测到文件源不可用，程序会在运行输出里说明缺什么。
+程序优先使用自身旁边的 `mod/`；不可写时使用 `%APPDATA%\DLSSGManager\mod`。源码检出从仓库根目录的 `mod/` 读取。自定义位置可在 `library.json` 的 `ModSourcePath` 中指定。
 
-**方法二：手动放置**
+`altnative/` 也支持用户自行导入的代理。导入文件不由管理器背书，必须自行确认与当前运行目录兼容。
 
-从 <https://github.com/sdli1995/dlssg_for_sm86> 下载（Clone 或 Download ZIP），把根目录的 `version.dll`、`dlssg_sm86.ini`，以及 `altnative/`、`config/presets/` 两个目录复制到 `mod/` 下。保持原目录结构，程序按固定文件名和相对路径识别，无需额外配置。
+## 校验与恢复
 
-`mod/` 的位置规则：
+- 所有请求必须为白名单主机上的 HTTPS；重定向逐跳复检。系统代理路径沿用代理感知策略。
+- 响应体积有上限，ZIP 解压不能逃出临时目录。
+- 必需文件齐全后，逐一验证 DLL 的 Authenticode 签名完整性。项目文件要求项目签名；NVIDIA 的两个运行库要求 NVIDIA Corporation 签名。
+- 镜像中的项目文件还必须匹配证书指纹 `85BA66762F851E49148D706915D09026281418E6`。官方源在项目换证书时记录警告；NVIDIA 证书不使用这个项目指纹。
+- 校验通过后才发布本地负载。版本与构建分别记在 `.manager-version`、`.manager-build`。
 
-| 情况 | 位置 |
-|---|---|
-| 程序目录可写（大多数情况） | 程序旁的 `mod\` |
-| 程序目录不可写（装在 `Program Files` 且未提权） | `%APPDATA%\DLSSGManager\mod` |
-
-**方法三：指向别处**
-
-程序也接受任意位置——把文件放好后，改 `%APPDATA%\DLSSGManager\library.json` 里的 `ModSourcePath` 指向该目录即可。
-
-## 下载器的网络约束
-
-内置下载器只访问白名单内的 HTTPS 地址，并且在请求前逐个校验解析出的 IP：
-
-- 允许的域名：`github.com`、`codeload.github.com`、`raw.githubusercontent.com`、`api.github.com`、`cdn.jsdelivr.net`
-- 拒绝环回、内网、CGNAT、链路本地、多播与保留地址
-- 重定向的每一跳都重新校验
-- 响应体积有上限，压缩包条目不允许逃出目标目录
-
-每个源失败会重试一次再切换到下一个，因此个别端点中断或受限只会导致降级，不会让更新整体失败。
-
-## 下载内容的校验
-
-Mod 是会被放进游戏目录的原生 DLL，所以下载路径按不可信处理。落盘之前会验证：
-
-1. **必须存在**：`version.dll`、`dlssg_sm86.ini` 与 `altnative/` 下的四个备用入口；
-2. **必须签名**：每个 DLL 都要带项目证书的有效 Authenticode 签名。注意这验证的是签名与文件内容是否匹配——改动任意一个字节都会让签名失效，因此能挡住中间方替换文件；
-3. **证书指纹必须一致**：记录值为 `A994735E6A7E9AA31FA926B3023B7C487DAB4850`（Native 0.2.4 的五个 DLL 共用）。
-
-第 3 条对镜像源是硬性要求——镜像不是内容的权威，指纹不符即拒绝。对 GitHub 官方源则记录警告后放行，以免上游更换自签名证书后更新功能失效。
-
-校验失败不会写入目标目录，程序会报告具体是哪个文件没通过。
-
+游戏中的运行文件逐一记录路径和哈希。恢复只删除可证明归属的文件，并还原备份；未知文件与无法识别的替换文件保留。删除日志仅清理新版的 `dlssg_sm86/logs/`，不递归删除整个运行目录。

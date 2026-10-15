@@ -2,9 +2,10 @@
 
 面向接手本项目的人（或未来的自己）。README 讲"怎么用"，这里讲"为什么这么做、改的时候会踩到什么"。
 
-- 当前版本：**v1.10.0**（配置保存与应用、构建选择、批量管理和界面改进）
+- 当前版本：**v1.11.0**（上游 0.4.0 适配、自动接管与绿色版发布）
+- 后续仅发布 Windows x64 自包含单文件绿色版，统一使用 `Portable` 发布配置；产物为 `publish/DLSSGManager.exe`。
+- **v1.11.0 已适配上游 0.4.0**：完整包下载、目录化运行负载、单代理升级、新配置与恢复规则见 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。下面描述 0.3.x 待机共存与 310.1 下载的历史说明不适用于 0.4.0。
 - 改进范围：见 [UI 落地清单](UI-IMPROVEMENTS.md)。
-- 测试：**480 项全绿**（`dotnet run --project test/Harness -- --self-test`）
 - 仓库：`github.com/BUNNY-19C/DLSSG-30s-manager`，打 tag 即发版
 
 ---
@@ -18,7 +19,7 @@
 - **部署与恢复**（代理 DLL + INI 放入渲染目录；恢复时只删能证明是本项目的文件）
 - **下载上游负载**（多源、证书 pin、进度条、暂停/取消）
 
-**不做的事**：不修改上游 DLL、不打包上游二进制进安装包、不引入第三方（如 pandaligx/RTX-FG-Manager）的文件。安装包不含 mod，首次启动自动获取。
+**不做的事**：不修改上游 DLL、不随管理器分发上游二进制、不引入第三方（如 pandaligx/RTX-FG-Manager）的文件。绿色版不含 mod，首次启动自动获取。
 
 ---
 
@@ -28,19 +29,16 @@
 # 构建（需要 .NET 8 SDK）
 dotnet build src/DLSSGManager/DLSSGManager.csproj -c Debug
 
-# 全量测试（含配置状态、构建隔离、保存失败、本地化/主题/部署全链路）
-dotnet run --project test/Harness -c Debug -- --self-test
+# 下载 Mod 文件，使用程序自身的下载入口
+dotnet run --project src/DLSSGManager -c Debug -- --fetch --silent
 
-# 只测下载链路（会真实联网下载到 mod/，约 210 MB）
-dotnet run --project test/Harness -c Debug -- --fetch
-
-# 打包（需要 Inno Setup 6 的 ISCC 在 PATH）
-# 命令见 CONTRIBUTING.md「打包」
+# 构建免安装绿色版（自带 .NET）
+dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile=Portable
 ```
 
-**发版流程**：`git tag v1.9.4 && git push origin main --tags` → GitHub Actions（`.github/workflows/release.yml`）自动构建安装包 + 便携版 + SHA256SUMS 并挂到 Release。工作流会把 tag 号通过 `-p:Version` 注入程序集，所以界面里的版本徽章自动正确。
+**发版流程**：`git tag v1.9.4 && git push origin main --tags` → GitHub Actions（`.github/workflows/release.yml`）自动构建绿色版与 SHA256SUMS 并挂到 Release。工作流会把 tag 号通过 `-p:Version` 注入程序集，所以界面里的版本徽章自动正确。
 
-**本地开发要点**：`DLSSGMANAGER_HOME` 环境变量可把数据目录重定向到任意路径——测试和冒烟验证都靠它隔离，别污染用户真实库（`%APPDATA%\DLSSGManager`）。
+**本地开发要点**：`DLSSGMANAGER_HOME` 环境变量可把数据目录重定向到指定路径，与用户默认库（`%APPDATA%\DLSSGManager`）分开保存。
 
 ---
 
@@ -54,7 +52,7 @@ src/DLSSGManager/
 ├─ MainWindow.xaml.cs   854  窗口装配、语言与主题切换、下载面板、GPU 行
 ├─ MainWindow.Actions.cs 561 部署/恢复/接管/批量/扫描/路径选择处理器
 ├─ Gpu.cs               548  显卡探测、架构判定、注册表显示名读写、INF 间接字符串解析
-├─ Strings.zh/en.cs     424  两张字符串表（必须逐键对齐，有测试）
+├─ Strings.zh/en.cs     424  两张字符串表（必须逐键对齐）
 ├─ Models.cs            306  GameEntry / GameProfile / DeploymentInfo / AppData
 ├─ Detection.cs         283  游戏发现：双标记扫描、渲染目录解析、主程序挑选
 ├─ ModSource.cs         282  本地负载：入口名、版本读取、导入自定义代理
@@ -63,16 +61,13 @@ src/DLSSGManager/
 ├─ Shell.cs             231  打开目录/文件、启动游戏、提权重启
 ├─ ModSourceLocator.cs  191  负载目录解析（仓库检出 / 便携 / 用户目录）
 ├─ Localization.cs      115  Loc.T、语言归一化
-├─ LocalizationAudit.cs 111  源码扫描：未定义键、占位符不一致
 ├─ Detection/Gpu 之外的工具：Native、OutputLog、Converters、Theme、ThemeKeys、Palette、Version
 └─ Themes/Dark.xaml + Light.xaml   两套主题字典（键必须完全一致）
 
-test/Harness/Program.cs  2297  控制台测试，449 项 Check
-installer/setup.iss       202  Inno Setup（安装时不联网）
 mod/                          下载得到的上游负载，不入库
 ```
 
-**分层原则**：模型与领域层（Models / Gpu / Detection / DeploymentService / ModFetcher / AntiCheat / Store）**不得引用 WPF 类型**。harness 是控制台程序，按白名单编译这些文件——所以给 harness 用不了的代码不要放进模型层。
+**分层原则**：模型与领域层（Models / Gpu / Detection / DeploymentService / ModFetcher / AntiCheat / Store）**不得引用 WPF 类型**，界面依赖集中在窗口与展示层。
 
 ---
 
@@ -82,8 +77,8 @@ mod/                          下载得到的上游负载，不入库
 
 ### 4.1 界面
 
-- **颜色一律 `DynamicResource`**。`StaticResource` 在元素创建时解析一次，切换主题后界面停在旧配色。有测试扫描 XAML/cs 里的硬编码颜色。
-- **两套主题字典键必须一致**（`ThemeKeys.All` 是权威清单，测试双向比对 + 对比度 4.5:1）。
+- **颜色一律 `DynamicResource`**。`StaticResource` 在元素创建时解析一次，切换主题后界面停在旧配色。
+- **两套主题字典键必须一致**，切换主题时才能正确解析全部资源。
 - **列表状态色需要显式重发**：`ThemeBrushConverter` 只在源属性通知时重算，切主题要调 `GameEntry.RaiseThemeColors()`。
 - **对话框有自己的资源作用域**，主窗口的隐式样式传不进去，按钮/输入/滚动条样式要在每个 Window 里重声明。
 - 文字从代码设置的（下拉项、GPU 建议行）不跟随语言绑定，必须走 `BuildLocalizedCombos` / `RefreshCodeText`。
@@ -96,6 +91,8 @@ mod/                          下载得到的上游负载，不入库
 
 **`DeploymentService.Evaluate`（后台）与 `Apply`（UI）是分开的**——`Evaluate` 会做哈希与 WinVerifyTrust（每个候选入口一次 ~30MB DLL），绝不能在 UI 线程调用。
 
+状态检查在没有部署记录时自动识别手工安装，并通过 `GameCheck.Adoption` 返回待接管记录；`Apply` 在 UI 线程登记，调用方随后保存库。单个检查、启动/刷新全部、扫描和添加目录共用此流程。接管不改写游戏文件、不生成原始备份，也不覆盖已有部署记录和备份；界面不再提供手动接管按钮。
+
 ### 4.3 部署所有权判定（数据安全的底线）
 
 恢复时"删除"必须能证明文件是本项目的，判据三层：
@@ -104,7 +101,7 @@ mod/                          下载得到的上游负载，不入库
 2. 已知社区构建哈希（`ModFetcher.KnownCommunityBuildHashes`）
 3. 项目 Authenticode 签名（`IsProjectSigned`，走 WinVerifyTrust + 证书主题匹配）
 
-**备份必须结转**：重新部署会重建 `DeploymentInfo`，若不把 `prev.Backups` 带过来，第一次部署置换的外部文件（别人的 INI）就永远回不来了。有测试守着。
+**备份必须结转**：重新部署会重建 `DeploymentInfo`，若不把 `prev.Backups` 带过来，第一次部署置换的外部文件（别人的 INI）就永远回不来了。
 
 **代理入口集合**：`OwnedEntryNames(prev)` = 已知入口名 ∪ 记录 `Files`（排除 INI）——自定义命名的代理只活在记录里，漏了它恢复就删不干净。
 
@@ -178,29 +175,17 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 
 ---
 
-## 6. 测试与验收
+## 6. 开发环境陷阱
 
-- **单元/集成**：`test/Harness` 覆盖部署→恢复全链路、所有权判定、下载 URL 策略、INI 渲染、本地化审计、主题一致性、版本号、下载进度与暂停门。新增逻辑请加 Check（`Check("描述", 条件, 详情)`），中文描述与既有风格一致。
-- **机器相关**的检查（NVIDIA 适配器、真实目录）用 `hasNvidia` / `_hasModFiles` 守卫，别让 CI 依赖本机环境。
-- **GUI 冒烟**（改界面后必做）：
-  1. 预置一个隔离库：`DLSSGMANAGER_HOME=<临时目录>` 写一份 `library.json`，指向临时假游戏目录（含 `.exe` + 标记文件）
-  2. 启动 exe，UI 里实际点一遍部署/恢复/主题切换
-  3. 截图可用 PowerShell 抓窗口（**注意 DPI**：进程需 `SetProcessDPIAware()`，否则 125% 缩放下只截到左上 80%——这个坑查了很久）
-
----
-
-## 7. 开发环境陷阱
-
-1. **harness 白名单编译**：新增 src 下的 .cs 文件后，要加进 `test/Harness/Harness.csproj` 的 `<Compile Include>`，否则测试工程看不到类型。
-2. **Mimosa hook 拒绝 Bash 写 .cs**：所有 C#/XAML 改动必须用 Write/Edit 工具（hook 会在提交前做安全扫描）。
-3. **.NET 8 SDK 会把 commit hash 拼进 `InformationalVersion`**（`1.9.3+abc1234`），界面只取 `+` 前的部分。
-4. **`ModSource` 是构造时快照**：导入自定义代理后必须重建实例才能看到新入口（测试里踩过一次）。
-5. **`Stopwatch.GetTimestamp` 与 `TimeSpan` 不能混算**，用 `Stopwatch.GetElapsedTime()`。
-6. **本地代理（Clash）抖动会导致 push 失败**——`git push` 报 443 连接失败时，提交和 tag 是安全的，稍后重试即可（Git 配置里 http.proxy 指向 127.0.0.1:7897）。
+1. **Mimosa hook 拒绝 Bash 写 .cs**：所有 C#/XAML 改动必须用 Write/Edit 工具（hook 会在提交前做安全扫描）。
+2. **.NET 8 SDK 会把 commit hash 拼进 `InformationalVersion`**（`1.9.3+abc1234`），界面只取 `+` 前的部分。
+3. **`ModSource` 是构造时快照**：导入自定义代理后必须重建实例才能看到新入口。
+4. **`Stopwatch.GetTimestamp` 与 `TimeSpan` 不能混算**，用 `Stopwatch.GetElapsedTime()`。
+5. **本地代理（Clash）抖动会导致 push 失败**——`git push` 报 443 连接失败时，提交和 tag 是安全的，稍后重试即可（Git 配置里 http.proxy 指向 127.0.0.1:7897）。
 
 ---
 
-## 8. 已知限制 / 待办
+## 7. 已知限制 / 待办
 
 按价值排序：
 
@@ -208,13 +193,12 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 2. **安全审计缺失**：Mimosa 扫描在 v1.8.4 之后多次不可用，那几次提交没有扫描结论。工具恢复后值得补跑一次深度扫描。
 3. **构造审查的 Optional 项**（未做，风险低）：
    - `ZipFile.ExtractToDirectory` 不限制解压总量（恶意镜像可炸磁盘；签名校验仍在写盘前，属可用性问题）
-   - `ModFetcher.Verify` 是 private，镜像拒绝/官方放行的分支只能靠真实下载触发（可下沉为 internal + 假 staging 测试）
    - 保存失败与关闭保护已落地：Save 返回结果；UI 保留内存记录和重试提示，批量保存失败停止后续项；Closing 等待操作完成或取消下载后退出。此流程不覆盖强制结束进程或断电。
 4. **反作弊规则表**与 GPU 设备 ID 区间是经验数据，遇到误判按实际游戏样本增补。
 
 ---
 
-## 9. 协作约定
+## 8. 协作约定
 
 - **issue 回复是给外部用户看的**：大白话讲原因、给可操作步骤、版本号只提最新；实现细节留在 commit message 与代码注释里。
 - **README 一切从简**，游戏特有事项集中在页首的注意事项块。

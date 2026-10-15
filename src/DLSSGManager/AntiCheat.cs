@@ -228,8 +228,7 @@ public static class AntiCheat
 
     /// <summary>
     /// Explains why the mod cannot be used on a game, for the prompt shown when the game is added or
-    /// when a deploy is attempted anyway. Kept here rather than in the window so the wording is
-    /// covered by tests.
+    /// when a deploy is attempted anyway. The wording is shared by the relevant prompts.
     ///
     /// The game name is quoted with the punctuation of the active language, so the sentence reads
     /// naturally in both.

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         这个模板收集游戏的实测结果，成功和失败都有价值——尤其**失败**的案例能帮其他人少走弯路。
-        This template collects real test results. Both outcomes are valuable — **failures** especially,
+        This template collects game compatibility reports. Both outcomes are valuable — **failures** especially,
         since they save others the trouble.
 
   - type: input

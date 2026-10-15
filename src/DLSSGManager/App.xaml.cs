@@ -16,9 +16,8 @@ public partial class App : Application
     {
         AppPaths.EnsureCreated();
 
-        // The installer runs the program with --fetch so a fresh install can arrive with its mod
-        // files already in place. Returning before base.OnStartup keeps StartupUri from opening the
-        // window, which would otherwise appear behind the installer.
+        // --fetch provides a command-line download entry. Return before base.OnStartup so StartupUri
+        // does not open the main window while fetching files.
         if (HasSwitch(e.Args, FetchSwitch))
         {
             Shutdown(RunFetch(HasSwitch(e.Args, SilentSwitch)));
@@ -47,8 +46,8 @@ public partial class App : Application
         args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Fetches the mod files, returning a process exit code so the installer can tell success from
-    /// failure. Progress goes to the log because a silent run has no console to write to.
+    /// Fetches the mod files, returning a process exit code for command-line callers.
+    /// Progress goes to the log because a silent run has no console to write to.
     /// </summary>
     private static int RunFetch(bool silent)
     {

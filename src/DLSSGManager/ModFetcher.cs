@@ -38,6 +38,8 @@ public static class ModFetcher
         "codeload.github.com",
         "raw.githubusercontent.com",
         "api.github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
         // Third-party mirrors. Accepted only with a matching certificate pin, because a mirror is not
         // the authority for this content — see Verify().
         "cdn.jsdelivr.net",
@@ -63,7 +65,8 @@ public static class ModFetcher
     private const long MaxArchiveBytes = 256L * 1024 * 1024;
 
     private const string RepoPath = "sdli1995/dlssg_for_sm86";
-    private const string RepoRef = "main";
+    public const string SupportedRelease = "0.4.0";
+    private const string RepoRef = SupportedRelease;
 
     /// <summary>
     /// File the downloader leaves in the mod folder to name the release it fetched. The shipped INI
@@ -71,7 +74,7 @@ public static class ModFetcher
     /// </summary>
     public const string VersionMarkerName = ".manager-version";
 
-    private sealed record Artifact(string SourcePath, string DestinationPath, bool Required, bool NeedsSignature);
+    private sealed record Artifact(string SourcePath, string DestinationPath, bool Required, bool NeedsSignature, bool Nvidia = false);
 
     /// <summary>
     /// The payload the manager consumes, with the checks each file needs.
@@ -90,6 +93,12 @@ public static class ModFetcher
         new("alternatives/dbghelp.dll", "altnative/dbghelp.dll", true, true),
         new("alternatives/dxgi.dll", "altnative/dxgi.dll", true, true),
         new("alternatives/d3d12.dll", "altnative/d3d12.dll", true, true),
+        new("dlssg_sm86/backend/sm86_backend.dll", "dlssg_sm86/backend/sm86_backend.dll", true, true),
+        new("dlssg_sm86/runtime/nvngx_dlssg.dll", "dlssg_sm86/runtime/nvngx_dlssg.dll", true, true, true),
+        new("dlssg_sm86/kernels/fg_kernels.dll", "dlssg_sm86/kernels/fg_kernels.dll", true, true),
+        new("dlssg_sm86/xefg/xefg_kernels.dll", "dlssg_sm86/xefg/xefg_kernels.dll", true, true),
+        new("dlssg_sm86/sr/nvngx_dlss.dll", "dlssg_sm86/sr/nvngx_dlss.dll", false, true, true),
+        new("dlssg_sm86/sr/sr_kernels.dll", "dlssg_sm86/sr/sr_kernels.dll", false, true),
         new("README.md", "README.md", false, false),
         new("THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt", false, false),
     };
@@ -130,10 +139,9 @@ public static class ModFetcher
 
     /// <summary>
     /// Address of the version probe: the published INI on the default branch, through an official
-    /// per-file endpoint. Exposed so the URL policy test covers it like every other address this
-    /// downloader can contact.
+    /// per-file endpoint.
     /// </summary>
-    public static string VersionProbeUrl => UrlFor(OfficialFileSource(), RepoPath, RepoRef, ModSource.IniName);
+    private static string VersionProbeUrl => UrlFor(OfficialFileSource(), RepoPath, RepoRef, ModSource.IniName);
 
     /// <summary>An official per-file endpoint, used for probes that fetch a single small file.</summary>
     private static Source OfficialFileSource() => Sources.First(s => !s.IsArchive && s.Official);
@@ -196,8 +204,7 @@ public static class ModFetcher
     /// <summary>
     /// True when the file's bytes match a published community build.
     ///
-    /// Extracted so the rule that matters — a mismatch means the bytes are discarded, from whichever
-    /// endpoint they came — is exercised by a test rather than only by a live download.
+    /// A mismatch means the bytes do not identify the published build.
     /// </summary>
     public static bool MatchesPin(string path, string sha256)
     {
@@ -213,14 +220,16 @@ public static class ModFetcher
 
     private static readonly Source[] Sources =
     {
+        // Only the Release attachment includes the optional INT8 super-resolution payload.
+        new("release", "Fetch.SourceRelease", true,
+            "https://github.com/{repo}/releases/download/{ref}/dlssg-release-{ref}-x64.zip", true),
+        new("release-proxy", "Fetch.SourceReleaseProxy", false,
+            "https://ghfast.top/https://github.com/{repo}/releases/download/{ref}/dlssg-release-{ref}-x64.zip", true),
         // Templates carry {repo}/{ref}/{path} rather than a baked-in repository, so the list can serve
         // more than one repository without duplicating every endpoint.
         //
-        // Per-file sources come first since 0.3.3: the repository grew a second build variant
-        // (310.1/) and an archive/ of old releases, so a whole-branch zip now carries ~470 MB where
-        // the payload needs ~210 MB. Fetching only the listed files is the smaller request. The two
-        // archive endpoints stay as fallbacks — one request each, useful when per-file endpoints are
-        // rate-limited.
+        // Per-file fallbacks omit SR, whose kernel pack is too large for a repository blob.
+        // All sources use the same supported tag, so mirrors cannot mix newer INI and older DLLs.
 
         // Per-file raw access: the authority itself, exact bytes, no cache between us and the repo.
         new("raw", "Fetch.SourceRaw", true,
@@ -240,13 +249,6 @@ public static class ModFetcher
         new("ghfast", "Fetch.SourceGhFast", false,
             "https://ghfast.top/https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
 
-        // One request, the whole branch (now much larger than the payload; see above).
-        new("codeload", "Fetch.SourceCodeload", true,
-            "https://codeload.github.com/{repo}/zip/refs/heads/{ref}", true),
-
-        // Same content through a different entry point; useful when codeload is throttled.
-        new("zipball", "Fetch.SourceZipball", true,
-            "https://api.github.com/repos/{repo}/zipball/{ref}", true),
     };
 
     /// <summary>Builds a concrete address from a source template.</summary>
@@ -255,16 +257,6 @@ public static class ModFetcher
             .Replace("{repo}", repo, StringComparison.Ordinal)
             .Replace("{ref}", reference, StringComparison.Ordinal)
             .Replace("{path}", path ?? "", StringComparison.Ordinal);
-
-    /// <summary>
-    /// The address a source would use for the upstream archive, for tests that assert the policy holds
-    /// for every endpoint the downloader can ever contact.
-    /// </summary>
-    public static string ArchiveUrlFor(string sourceId)
-    {
-        var source = Sources.First(s => string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase));
-        return UrlFor(source, RepoPath, RepoRef, null);
-    }
 
     /// <summary>
     /// A source as presented to the user: a stable id to pass back, plus text in the active language.
@@ -281,11 +273,6 @@ public static class ModFetcher
 
     /// <summary>Id used to mean "try every source in turn"; see <see cref="DownloadIntoAsync"/>.</summary>
     public const string AutoSourceId = "auto";
-
-    public static IReadOnlyList<string> SourceNames => Sources.Select(s => s.Name).ToArray();
-
-    /// <summary>Stable source identifiers, for code and tests that need to address a source.</summary>
-    public static IReadOnlyList<string> SourceIds => Sources.Select(s => s.Id).ToArray();
 
     /// <summary>
     /// Environment variable naming a single source to use, for diagnosing one endpoint in isolation.
@@ -333,7 +320,7 @@ public static class ModFetcher
     public static bool IsAllowedAddress(Uri uri) => IsAllowedAddress(uri, ResolveProxyRouted(uri));
 
     /// <summary>
-    /// The policy with the proxy state made explicit, for tests and callers that already know it.
+    /// The policy with the proxy state made explicit.
     /// </summary>
     /// <param name="proxyRouted">
     /// True when a system proxy will carry the request. The resolved-address check guards against
@@ -578,6 +565,13 @@ public static class ModFetcher
         DownloadGate? gate = null,
         string runtimeModel = BuildCatalog.Default)
     {
+        ct.ThrowIfCancellationRequested();
+        if (BuildCatalog.Normalize(runtimeModel) != BuildCatalog.Default)
+        {
+            var unavailable = new OpResult();
+            unavailable.Fail(Loc.T("Manage.RetiredBuild"));
+            return unavailable;
+        }
         var sources = ActiveSources(sourceId);
         var singleSource = sources.Count == 1 && IsExplicitChoice(sourceId);
 
@@ -641,10 +635,8 @@ public static class ModFetcher
             if (source.IsArchive)
             {
                 await FetchArchiveAsync(source, staging, r, progress, ct, byteProgress, gate).ConfigureAwait(false);
-                if (runtimeModel == BuildCatalog.Conservative)
-                    foreach (var artifact in Payload.Where(a => a.NeedsSignature))
-                        File.Copy(Path.Combine(staging, BuildCatalog.RemotePath(artifact.SourcePath, runtimeModel)),
-                            Path.Combine(staging, artifact.SourcePath), overwrite: true);
+                if (!ModSource.SuperResolutionFiles.All(p => File.Exists(Path.Combine(staging, p))))
+                    throw new InvalidOperationException(Loc.T("Manage.NeedFullPackage"));
             }
             else
                 await FetchIndividualFilesAsync(source, staging, r, progress, ct, byteProgress, gate, runtimeModel).ConfigureAwait(false);
@@ -663,13 +655,14 @@ public static class ModFetcher
             var copied = Publish(staging, destination);
             File.WriteAllText(Path.Combine(destination, BuildCatalog.Marker), BuildCatalog.Normalize(runtimeModel));
             PruneSupersededEntries(destination, r);
-            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName)) ?? versionLabel;
+            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName)) ?? SupportedRelease;
 
             // The shipped INI stopped carrying a version banner in 0.3.0, so the label detected before
             // the download is remembered on disk — otherwise the badge would have nothing to show and
             // the next start could not tell which release is installed. Written even when unknown
             // (then empty): a payload that replaced the old files must not keep the old marker.
-            TryWriteVersionMarker(destination, versionLabel ?? "");
+            TryWriteVersionMarker(destination, version);
+            if (!new ModSource(destination).SupportsSuperResolution) r.Note(Loc.T("Manage.NeedFullPackage"));
 
             r.Note(Loc.T("Fetch.Updated", copied, destination));
             r.Message = version is null
@@ -734,6 +727,9 @@ public static class ModFetcher
             progress?.Report(Loc.T("Fetch.Extracting"));
             Directory.CreateDirectory(staging);
             ZipFile.ExtractToDirectory(archive, staging, overwriteFiles: true);
+
+            // Release packages already have version.dll at their root.
+            if (File.Exists(Path.Combine(staging, ModSource.IniName))) return;
 
             // The archive wraps everything in a single top-level folder whose name varies by source.
             var inner = Directory.EnumerateDirectories(staging).FirstOrDefault();
@@ -809,8 +805,9 @@ public static class ModFetcher
                 byteProgress?.Report(new FetchProgress(source.Name, done, Payload.Length, fileBytes,
                     declaredTotal > 0 ? declaredTotal : fileBytes, meter.Report(fileBytes)));
             }
-            catch (Exception ex) when (!artifact.Required)
+            catch (Exception ex) when (!artifact.Required && ex is not OperationCanceledException)
             {
+                if (File.Exists(target)) File.Delete(target);
                 done--;
                 // Optional files (readme, presets) may legitimately be absent; note and move on.
                 r.Note(Loc.T("Fetch.SkippedOptional", artifact.SourcePath, ex.Message));
@@ -831,6 +828,8 @@ public static class ModFetcher
                              .ToList();
         if (missing.Count > 0)
             return (false, Loc.T("Fetch.Incomplete", Loc.Join(missing)));
+        if (ModSource.SuperResolutionFiles.Count(p => File.Exists(Path.Combine(staging, p))) == 1)
+            return (false, Loc.T("Manage.NeedFullPackage"));
 
         var pinMismatch = new List<string>();
         var unsigned = new List<string>();
@@ -838,25 +837,17 @@ public static class ModFetcher
         foreach (var artifact in Payload.Where(a => a.NeedsSignature))
         {
             var path = Path.Combine(staging, artifact.SourcePath);
+            if (!File.Exists(path)) continue;
 
             // X509Certificate2 is needed for Thumbprint; the static loader returns the base type.
-            X509Certificate2? cert;
-            try
-            {
-                cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
-            }
-            catch
-            {
-                unsigned.Add(Path.GetFileName(artifact.SourcePath));
-                continue;
-            }
-
+            var cert = DeploymentService.ReadSignerCertificate(path, out var intact, requireTrusted: artifact.Nvidia);
             using (cert)
             {
-                var subject = cert.Subject ?? "";
-                if (!subject.Contains(ExpectedSignerSubject, StringComparison.OrdinalIgnoreCase))
+                var subject = cert?.Subject ?? "";
+                var expected = artifact.Nvidia ? "NVIDIA Corporation" : ExpectedSignerSubject;
+                if (!intact || !subject.Contains(expected, StringComparison.OrdinalIgnoreCase))
                     unsigned.Add(Path.GetFileName(artifact.SourcePath));
-                else if (!string.Equals(cert.Thumbprint, PinnedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+                else if (!artifact.Nvidia && !string.Equals(cert!.Thumbprint, PinnedCertThumbprint, StringComparison.OrdinalIgnoreCase))
                     pinMismatch.Add(Path.GetFileName(artifact.SourcePath));
             }
         }
@@ -893,7 +884,16 @@ public static class ModFetcher
         foreach (var artifact in Payload)
         {
             var source = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(source)) continue;
+            if (!File.Exists(source))
+            {
+                // Do not mix old SR files with a new frame-generation-only download.
+                if (ModSource.SuperResolutionFiles.Contains(artifact.DestinationPath))
+                {
+                    var stale = Path.Combine(destination, artifact.DestinationPath);
+                    if (File.Exists(stale)) File.Delete(stale);
+                }
+                continue;
+            }
 
             CopyInto(source, Path.Combine(destination, artifact.DestinationPath.Replace('/', Path.DirectorySeparatorChar)), destination);
             copied++;

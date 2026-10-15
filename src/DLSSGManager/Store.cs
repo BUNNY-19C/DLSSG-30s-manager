@@ -8,8 +8,7 @@ namespace DLSSGManager;
 public static class AppPaths
 {
     /// <summary>
-    /// Overrides the data folder. Set by the test harness so its deliberately-corrupt fixtures and
-    /// download logs stay out of the user's real library and log.
+    /// Overrides the data folder, keeping a separate library and log at the configured location.
     /// </summary>
     public const string RootOverrideVariable = "DLSSGMANAGER_HOME";
 
@@ -75,8 +74,7 @@ public static class AppPaths
 public static class LibraryStore
 {
     /// <summary>
-    /// Reads the library. <paramref name="path"/> exists so tests can round-trip against a scratch file
-    /// instead of the user's real library.
+    /// Reads the library from an explicit path or the app's default data location.
     /// </summary>
     public static AppData Load(string? path = null)
     {
@@ -89,7 +87,8 @@ public static class LibraryStore
                 var data = System.Text.Json.JsonSerializer.Deserialize<AppData>(json, JsonOptions);
                 if (data is not null)
                 {
-                    data.DownloadBuild = BuildCatalog.Normalize(data.DownloadBuild);
+                    // 0.4.0 has a single downloadable build; per-game legacy choices stay intact.
+                    data.DownloadBuild = BuildCatalog.Default;
                     foreach (var g in data.Games) Normalize(g);
                     return data;
                 }
@@ -135,6 +134,11 @@ public static class LibraryStore
         g.Profile.Router = NormalizeRouter(g.Profile.Router);
         g.Profile.KernelImage = NormalizeKernel(g.Profile.KernelImage);
         g.Profile.Preset = NormalizePreset(g.Profile.Preset);
+        g.Profile.Engine = string.Equals(g.Profile.Engine, "XeSS", StringComparison.OrdinalIgnoreCase) ? "XeSS" : "DLSS";
+        g.Profile.FlowResolution = g.Profile.FlowResolution?.Trim().ToLowerInvariant() switch
+        {
+            "coarse" => "Coarse", "fine" => "Fine", _ => "Middle",
+        };
 
         // Libraries written before 0.3.3 stored Optimized as a boolean; migrate once so the tier
         // becomes the single source of truth (true = bit-identical speedups = tier 1).
@@ -159,6 +163,7 @@ public static class LibraryStore
     {
         "A" => "A",
         "B" => "B",
+        "C" => "C",
         _ => "Auto",
     };
 
@@ -202,6 +207,9 @@ public static class IniTemplate
         ["Preset"] = p.Preset,
         ["MaxGeneratedFrames"] = Math.Clamp(p.MaxGeneratedFrames, 1, 5).ToString(),
         ["Level"] = Math.Clamp(p.LogLevel, 0, 3).ToString(),
+        ["Engine"] = p.Engine,
+        ["FlowResolution"] = p.FlowResolution,
+        ["UseHudless"] = p.UseHudless ? "1" : "0",
 
         // 0.2.x (kept so an older payload still receives the user's settings)
         ["Router"] = p.Router,
@@ -215,19 +223,54 @@ public static class IniTemplate
         var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
 
         var values = Values(p);
+        var section = "";
+        var modern = text.Contains("[DLSSG]", StringComparison.OrdinalIgnoreCase);
 
         for (var i = 0; i < lines.Count; i++)
         {
+            var heading = Regex.Match(lines[i], @"^\s*\[([^\]]+)\]");
+            if (heading.Success) section = heading.Groups[1].Value;
             var m = Regex.Match(lines[i], @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=");
             if (!m.Success) continue;
             var key = m.Groups[1].Value;
+            if (modern && key.Equals("Mode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (section.Equals("SuperResolution", StringComparison.OrdinalIgnoreCase))
+                    lines[i] = "Mode=" + (p.SuperResolution ? "On" : "Off");
+                continue;
+            }
+            if (modern)
+            {
+                var expectedSection = key.ToLowerInvariant() switch
+                {
+                    "enabled" => "General", "engine" or "maxgeneratedframes" => "FrameGeneration",
+                    "optimized" or "preset" => "DLSSG", "flowresolution" or "usehudless" => "XeSSFG",
+                    "level" => "Logging", _ => "",
+                };
+                if (!section.Equals(expectedSection, StringComparison.OrdinalIgnoreCase)) continue;
+            }
             if (values.TryGetValue(key, out var v))
-                lines[i] = $"{key}={v}";
+                lines[i] = $"{key}={(key.Equals("MaxGeneratedFrames", StringComparison.OrdinalIgnoreCase) && modern && p.UsesXeSS ? "1" : v)}";
+        }
+
+        if (modern)
+        {
+            var logging = lines.FindIndex(l => l.Trim().Equals("[Logging]", StringComparison.OrdinalIgnoreCase));
+            if (logging >= 0)
+            {
+                var end = lines.FindIndex(logging + 1, l => l.TrimStart().StartsWith('['));
+                if (end < 0) end = lines.Count;
+                var timing = lines.FindIndex(logging + 1, end - logging - 1,
+                    l => Regex.IsMatch(l, @"^\s*FrameTiming\s*=", RegexOptions.IgnoreCase));
+                var value = "FrameTiming=" + (p.FrameTiming ? "1" : "0");
+                if (timing >= 0) lines[timing] = value;
+                else lines.Insert(logging + 1, value);
+            }
         }
 
         var body = string.Join("\r\n", lines);
 
-        if (p.Diagnostics && !body.Contains("[Diagnostics]", StringComparison.OrdinalIgnoreCase))
+        if (!modern && p.Diagnostics && !body.Contains("[Diagnostics]", StringComparison.OrdinalIgnoreCase))
         {
             // A 0.2.x profiling section. 0.3.0 moved the equivalent knobs into its README and ignores an
             // unknown section, so appending it stays harmless.
@@ -247,8 +290,18 @@ public static class IniTemplate
         "Enabled=1",
         "",
         "[FrameGeneration]",
-        "Optimized=1",
+        "Engine=DLSS",
         $"MaxGeneratedFrames={Math.Clamp(p.MaxGeneratedFrames, 1, 5)}",
+        "[DLSSG]",
+        "Optimized=2",
+        "Preset=Auto",
+        "[XeSSFG]",
+        "FlowResolution=Middle",
+        "UseHudless=1",
+        "[Runtime]",
+        "Mode=Bundled",
+        "[SuperResolution]",
+        "Mode=Off",
         "",
         "[Logging]",
         $"Level={Math.Clamp(p.LogLevel, 0, 3)}",

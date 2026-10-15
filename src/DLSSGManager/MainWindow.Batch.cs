@@ -69,7 +69,11 @@ public partial class MainWindow
                 _log.Write(line);
                 completed++;
                 BatchStatusText.Text = Loc.T("Batch.Progress", completed, targets.Count);
-                try { DeploymentService.Apply(game, await Task.Run(() => DeploymentService.Evaluate(game))); }
+                try
+                {
+                    ApplyGameCheck(game, await Task.Run(() => DeploymentService.Evaluate(game)));
+                    saved = SaveLibrary() && saved;
+                }
                 catch (Exception ex) { _log.Write(ex.Message); }
                 if (!saved)
                 {

@@ -10,12 +10,10 @@ public enum AppTheme
 /// <summary>
 /// Keys into the theme dictionaries.
 ///
-/// Kept apart from <see cref="Theme"/>, which needs WPF types, so that code and tests that only
-/// reference a key name do not pull in the presentation framework.
+/// Kept apart from <see cref="Theme"/> so key names do not depend on WPF types.
 ///
 /// The two dictionaries (<c>Themes/Dark.xaml</c>, <c>Themes/Light.xaml</c>) must define exactly the
-/// same keys; a test compares them, because a key missing from one theme throws at switch time rather
-/// than failing visibly at build time.
+/// same keys so switching themes can resolve every resource.
 /// </summary>
 public static class ThemeKeys
 {
@@ -73,21 +71,6 @@ public static class ThemeKeys
     public const string StatusWarnBrush = "StatusWarnBrush";
     public const string StatusBadBrush = "StatusBadBrush";
     public const string StatusIdleBrush = "StatusIdleBrush";
-
-    /// <summary>Every key a theme dictionary must define.</summary>
-    public static readonly string[] All =
-    {
-        WindowBackground, PanelBackground, CardBackground, LogBackground, PopupBackground,
-        InputBackground, InputBorderBrush,
-        LineBrush, HoverBackground, ListHoverBackground, ListSelectedBackground,
-        TextPrimary, TextMuted, TextFaint, TextSection, TextLogTitle, TextOnLog,
-        AccentBrush, ButtonBackground, ButtonBorderBrush,
-        PrimaryBackground, PrimaryBorderBrush, PrimaryHoverBackground, OnPrimaryText,
-        DangerBackground, DangerBorderBrush, DangerText,
-        BadgeOkBackground, BadgeOkText, BadgeWarnBackground, BadgeWarnText,
-        WarnBannerBackground, WarnBannerBorder, WarnBannerTitle, WarnBannerBody,
-        StatusOkBrush, StatusWarnBrush, StatusBadBrush, StatusIdleBrush,
-    };
 
     /// <summary>Parses a stored theme name; anything unrecognised falls back to dark.</summary>
     public static AppTheme Parse(string? stored) =>

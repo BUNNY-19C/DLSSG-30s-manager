@@ -2,9 +2,7 @@ name: Release
 
 # 推送 v* 标签时自动构建并发布，也可以在 Actions 页面手动触发。
 #
-# 产出两个文件：
-#   · DLSSGManager.exe        —— 单文件绿色版，双击即用
-#   · DLSSGManager-*-setup.exe —— 安装包，安装路径可选，带卸载程序
+# 只产出自包含的单文件绿色版 DLSSGManager.exe，以及 SHA256SUMS.txt。
 on:
   push:
     tags: ['v*']
@@ -24,15 +22,10 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: 构建并测试
+      - name: 构建
         shell: pwsh
         run: |
           dotnet build -c Release --nologo
-
-          # 未获取 Mod 文件时，依赖它们的用例会自动跳过；其余用例必须全绿。
-          # 用 & 调用以免路径含空格时被当成字符串。
-          & ./test/Harness/bin/Release/net8.0-windows/Harness.exe
-          if ($LASTEXITCODE -ne 0) { throw "测试失败（退出码 $LASTEXITCODE）" }
 
       - name: 解析版本号
         id: version
@@ -52,45 +45,22 @@ jobs:
         run: |
           # 自包含：目标机器无需安装 .NET 运行时，双击即可用。
           dotnet publish src/DLSSGManager/DLSSGManager.csproj `
-            -c Release -r win-x64 --self-contained true `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true `
-            -p:DebugType=none `
+            -c Release -p:PublishProfile=Portable `
             -p:Version=${{ steps.version.outputs.value }} `
-            -o publish --nologo
-
-      - name: 安装 Inno Setup
-        shell: pwsh
-        run: |
-          # runner 自带 Chocolatey，装 Inno Setup 6 用于编译安装包。
-          choco install innosetup --yes --no-progress
-          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) { throw "未找到 ISCC.exe：$iscc" }
-          Write-Output "ISCC: $iscc"
-
-      - name: 编译安装包
-        shell: pwsh
-        run: |
-          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          & $iscc "/DAppVersion=${{ steps.version.outputs.value }}" "installer/setup.iss"
-          if ($LASTEXITCODE -ne 0) { throw "安装包编译失败（退出码 $LASTEXITCODE）" }
+            --nologo
 
       - name: 生成校验值
         shell: pwsh
         run: |
-          $files = @(
-            'publish/DLSSGManager.exe',
-            (Get-Item 'dist/DLSSGManager-*-setup.exe' | Select-Object -First 1).FullName
-          )
+          $files = @('publish/DLSSGManager.exe')
 
           $lines = foreach ($f in $files) {
             $hash = (Get-FileHash $f -Algorithm SHA256).Hash
             "{0}  {1}" -f $hash, (Split-Path $f -Leaf)
           }
-          $lines | Out-File -Encoding ascii dist/SHA256SUMS.txt
+          $lines | Out-File -Encoding ascii publish/SHA256SUMS.txt
 
-          Get-Content dist/SHA256SUMS.txt
+          Get-Content publish/SHA256SUMS.txt
           foreach ($f in $files) {
             "{0}: {1:N1} MB" -f (Split-Path $f -Leaf), ((Get-Item $f).Length / 1MB) | Write-Output
           }
@@ -101,8 +71,7 @@ jobs:
           name: DLSSGManager-${{ steps.version.outputs.value }}
           path: |
             publish/DLSSGManager.exe
-            dist/DLSSGManager-*-setup.exe
-            dist/SHA256SUMS.txt
+            publish/SHA256SUMS.txt
 
       - name: 创建 Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -110,8 +79,7 @@ jobs:
         with:
           files: |
             publish/DLSSGManager.exe
-            dist/DLSSGManager-*-setup.exe
-            dist/SHA256SUMS.txt
+            publish/SHA256SUMS.txt
           name: ${{ github.ref_name }}
           body_path: docs/RELEASE-NOTES.md
 

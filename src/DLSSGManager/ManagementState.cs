@@ -23,6 +23,7 @@ public static class ConfigurationState
 public static class BuildCatalog
 {
     public const string Default = "310.9";
+    public const string BundledRuntimeVersion = "310.9.16";
     public const string Conservative = "310.1";
     public const string Marker = ".manager-build";
     public static string Normalize(string? value) => value == Conservative ? Conservative : Default;

@@ -3,7 +3,7 @@ blank_issues_enabled: false
 contact_links:
   - name: 下载最新版本 / Download the latest release
     url: https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest
-    about: 安装包与绿色版都在 Releases 页面 / The installer and the portable build are both on the Releases page
+    about: 下载免安装绿色版 / Download the portable build
 
   - name: 上游 mod 的问题 / Issues with the mod itself
     url: https://github.com/sdli1995/dlssg_for_sm86/issues

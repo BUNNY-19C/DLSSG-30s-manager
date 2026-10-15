@@ -96,7 +96,7 @@ public partial class MainWindow
     private async Task FinishGameActionAsync(GameEntry game)
     {
         var check = await Task.Run(() => DeploymentService.Evaluate(game));
-        DeploymentService.Apply(game, check);
+        ApplyGameCheck(game, check);
         SaveLibrary();
         UpdateStatusCard();
     }
@@ -138,44 +138,6 @@ public partial class MainWindow
         {
             _log.Write("✗ " + ex.Message);
             AppPaths.Log("恢复失败: " + ex);
-        }
-        finally
-        {
-            _busy = false;
-            BatchStatusText.Text = "";
-        }
-    }
-
-    private async void Adopt_Click(object sender, RoutedEventArgs e)
-    {
-        if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
-        if (_saveFailure is not null && !SaveLibrary()) return;
-        var game = Selected;
-        if (game is null) return;
-
-        var body = Loc.T("Adopt.Confirm");
-        if (MessageBox.Show(body, Loc.T("Adopt.ConfirmTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
-            return;
-
-        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
-
-        _busy = true;
-        BatchStatusText.Text = Loc.T("Adopt.Starting", game.Name);
-
-        try
-        {
-            // Adoption trust-verifies every candidate DLL in the game folder, so it belongs off the
-            // UI thread like deploy.
-            var result = await Task.Run(() => DeploymentService.Adopt(game));
-            _log.Details(result.Lines);
-            _log.Result(result.Ok, result.Message);
-            SaveLibrary();
-            await FinishGameActionAsync(game);
-        }
-        catch (Exception ex)
-        {
-            _log.Write("✗ " + Loc.T("Adopt.Failed", ex.Message));
-            AppPaths.Log("接管失败: " + ex);
         }
         finally
         {
@@ -317,7 +279,7 @@ public partial class MainWindow
             var results = await Task.Run(() =>
                 games.Select(g => (Game: g, Check: DeploymentService.Evaluate(g))).ToList());
 
-            foreach (var (game, check) in results) DeploymentService.Apply(game, check);
+            foreach (var (game, check) in results) ApplyGameCheck(game, check);
 
             SaveLibrary();
             UpdateStatusCard();
