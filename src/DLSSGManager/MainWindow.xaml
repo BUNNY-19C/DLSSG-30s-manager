@@ -4,9 +4,15 @@
         xmlns:local="clr-namespace:DLSSGManager"
         xmlns:loc="clr-namespace:DLSSGManager"
         x:Name="Root"
-        Title="{loc:Tr App.Name}" Height="820" Width="1240" MinHeight="640" MinWidth="1040"
+        Title="{loc:Tr App.Name}" Height="820" Width="1240" MinHeight="640" MinWidth="920"
         Background="{DynamicResource WindowBackground}" Foreground="{DynamicResource TextPrimary}"
         FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13">
+
+    <Window.InputBindings>
+        <KeyBinding Key="S" Modifiers="Control" Command="{Binding ManagementVM.SaveCommand}" />
+        <KeyBinding Key="D" Modifiers="Control" Command="{Binding ManagementVM.DeployCommand}" />
+        <KeyBinding Key="R" Modifiers="Control" Command="{Binding ManagementVM.RestoreCommand}" />
+    </Window.InputBindings>
 
     <Window.Resources>
         <local:BoolToVisibility x:Key="BoolToVis" />
@@ -14,7 +20,7 @@
         <local:ThemeBrushConverter x:Key="ThemeBrush" />
         <!-- Keep the selected label bound to the item when the interface language changes. -->
         <DataTemplate x:Key="ChoiceLabelTemplate">
-            <TextBlock Text="{Binding Text}" />
+            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
         </DataTemplate>
 
         <!--
@@ -373,6 +379,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- ═══════════ 顶栏：品牌 + 全局控件 ═══════════ -->
@@ -500,8 +507,8 @@
         <!-- ═══════════ 主体：侧边栏 + 详情卡片区 ═══════════ -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300" MinWidth="240" MaxWidth="420" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="280" MinWidth="240" MaxWidth="380" />
+                <ColumnDefinition Width="*" MinWidth="400" />
             </Grid.ColumnDefinitions>
 
             <!-- 侧边栏：游戏列表 + 批量操作 -->
@@ -551,7 +558,8 @@
 
                     <ListBox x:Name="GameList" Grid.Row="1" Background="Transparent" BorderThickness="0"
                              Margin="8,0,8,6" SelectionChanged="GameList_SelectionChanged"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             AutomationProperties.Name="{loc:Tr List.Title}">
                         <!-- Keep the current theme when busy disables the list; the stock template
                              replaces its background with a system brush in the disabled state. -->
                         <ListBox.Template>
@@ -809,6 +817,8 @@
                                             <TextBlock Text="{loc:Tr Detail.Enabled}" TextWrapping="Wrap" />
                                         </CheckBox>
                                         <StackPanel x:Name="Runtime040Settings" Visibility="Collapsed">
+                                            <TextBlock x:Name="Runtime041Note" Text="{loc:Tr Detail.Runtime041Note}" Visibility="Collapsed"
+                                                       TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8" />
                                             <Grid Margin="0,0,0,8">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                                 <TextBlock Text="{loc:Tr Detail.Engine}" Style="{StaticResource FieldLabel}" />
@@ -820,16 +830,32 @@
                                                        Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}" />
                                             <Grid Margin="0,0,0,8" Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{loc:Tr Detail.FlowResolution}" Style="{StaticResource FieldLabel}" />
-                                                <ComboBox Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding Profile.FlowResolution, Mode=TwoWay}">
-                                                    <ComboBoxItem Content="Coarse" /><ComboBoxItem Content="Middle" /><ComboBoxItem Content="Fine" />
-                                                </ComboBox>
+                                                <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="XeSSFrameCombo" Grid.Column="1" SelectedValuePath="Value"
+                                                          ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False"
+                                                          SelectedValue="{Binding Profile.XeSSMaxGeneratedFrames, Mode=TwoWay}" />
                                             </Grid>
-                                            <CheckBox Content="{loc:Tr Detail.UseHudless}" IsChecked="{Binding Profile.UseHudless, Mode=TwoWay}" Margin="0,0,0,8"
-                                                      Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}" />
-                                            <CheckBox x:Name="SuperResolutionCheck" IsChecked="{Binding Profile.SuperResolution, Mode=TwoWay}" Margin="0,0,0,8">
-                                                <TextBlock Text="{loc:Tr Detail.SuperResolution}" TextWrapping="Wrap" />
-                                            </CheckBox>
+                                            <Grid Margin="0,0,0,8" Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{loc:Tr Detail.FlowResolution}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="FlowResolutionCombo" Grid.Column="1" SelectedValuePath="Value"
+                                                          ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False"
+                                                          SelectedValue="{Binding Profile.FlowResolution, Mode=TwoWay}" />
+                                            </Grid>
+                                            <Grid Margin="0,0,0,8" Visibility="{Binding Profile.UsesXeSS, Converter={StaticResource BoolToVis}}">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{loc:Tr Detail.UseHudless}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="HudlessCombo" Grid.Column="1" SelectedValuePath="Value"
+                                                          ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False"
+                                                          SelectedValue="{Binding Profile.HudlessMode, Mode=TwoWay}" />
+                                            </Grid>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{loc:Tr Detail.SuperResolution}" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="SuperResolutionCombo" Grid.Column="1" SelectedValuePath="Value"
+                                                          ItemTemplate="{StaticResource ChoiceLabelTemplate}" IsTextSearchEnabled="False"
+                                                          SelectedValue="{Binding Profile.SuperResolutionMode, Mode=TwoWay}" />
+                                            </Grid>
                                             <TextBlock Text="{loc:Tr Detail.SuperResolutionNote}" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8" />
                                         </StackPanel>
                                         <!-- 0.3.3: Optimized is a 0-3 consistency tier, not a boolean. The
@@ -847,7 +873,7 @@
                                                       SelectedValue="{Binding Profile.OptimizedTier, Mode=TwoWay}"
                                                       ToolTip="{loc:Tr Detail.OptimizedTierTip}" />
                                         </Grid>
-                                        <Grid>
+                                        <Grid Visibility="{Binding Profile.UsesDlss, Converter={StaticResource BoolToVis}}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="120" />
                                                 <ColumnDefinition Width="*" />
@@ -921,14 +947,14 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{loc:Tr Detail.Preset}" Style="{StaticResource FieldLabel}" />
-                                                <ComboBox x:Name="PresetCombo" Grid.Column="1" SelectedValuePath="Content"
+                                                <ComboBox x:Name="PresetCombo" Grid.Column="1" SelectedValuePath="Tag"
                                                           IsEnabled="{Binding Profile.UsesDlss}"
                                                           SelectedValue="{Binding Profile.Preset, Mode=TwoWay}"
                                                           ToolTip="{loc:Tr Detail.PresetTip}">
-                                                    <ComboBoxItem Content="Auto" />
-                                                    <ComboBoxItem Content="A" />
-                                                    <ComboBoxItem Content="B" />
-                                                    <ComboBoxItem x:Name="PresetCOption" Content="C" Visibility="Collapsed" />
+                                                    <ComboBoxItem Tag="Auto" Content="{loc:Tr Detail.PresetAutoLegacy}" />
+                                                    <ComboBoxItem Tag="A" Content="A" />
+                                                    <ComboBoxItem Tag="B" Content="B" />
+                                                    <ComboBoxItem x:Name="PresetCOption" Tag="C" Content="C" Visibility="Collapsed" />
                                                 </ComboBox>
                                             </Grid>
                                         </StackPanel>
@@ -952,21 +978,6 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Style="{StaticResource SectionCard}">
-                                <Expander x:Name="GuidanceExpander" Header="{loc:Tr Guide.Title}" Foreground="{DynamicResource TextPrimary}">
-                                    <StackPanel Margin="0,10,0,0">
-                                        <ComboBox x:Name="GuidanceCombo" SelectedValuePath="Tag" SelectedValue="{Binding CompatibilityId, Mode=TwoWay}">
-                                            <ComboBoxItem Tag="auto" Content="{loc:Tr Guide.Auto}" />
-                                            <ComboBoxItem Tag="none" Content="{loc:Tr Guide.Disable}" />
-                                            <ComboBoxItem Tag="wilds" Content="{loc:Tr Guide.WildsName}" />
-                                            <ComboBoxItem Tag="zzz" Content="{loc:Tr Guide.ZzzName}" />
-                                            <ComboBoxItem Tag="nte" Content="{loc:Tr Guide.NteName}" />
-                                        </ComboBox>
-                                        <TextBlock Text="{Binding Management.Guidance, ElementName=Root}"
-                                                   TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextMuted}" />
-                                    </StackPanel>
-                                </Expander>
-                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -974,7 +985,7 @@
         </Grid>
 
         <!-- ═══════════ 日志条 ═══════════ -->
-        <Border Grid.Row="3" Background="{DynamicResource LogBackground}"
+        <Border Grid.Row="4" Background="{DynamicResource LogBackground}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.RowDefinitions>
@@ -992,12 +1003,15 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="FetchProgressText" VerticalAlignment="Center" FontSize="12"
                                Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis"
-                               Margin="0,0,12,0" />
+                               Margin="0,0,12,0"
+                               AutomationProperties.LiveSetting="Polite" />
                     <ProgressBar x:Name="FetchProgressBar" Grid.Column="1" Minimum="0" Maximum="100"
-                                 VerticalAlignment="Center" Margin="0,0,12,0" />
+                                 VerticalAlignment="Center" Margin="0,0,12,0"
+                                 AutomationProperties.Name="{loc:Tr Fetch.Progress}" />
                     <TextBlock x:Name="FetchProgressSpeed" Grid.Column="2" VerticalAlignment="Center"
                                FontSize="12" FontFamily="Cascadia Mono, Consolas, monospace"
-                               Foreground="{DynamicResource TextMuted}" Margin="0,0,12,0" />
+                               Foreground="{DynamicResource TextMuted}" Margin="0,0,12,0"
+                               AutomationProperties.LiveSetting="Polite" />
                     <Button x:Name="FetchPauseButton" Grid.Column="3" Content="{loc:Tr Fetch.Pause}"
                             Style="{StaticResource ToolButton}" Padding="10,4" FontSize="12"
                             Margin="0,0,6,0" Click="FetchPause_Click" ToolTip="{loc:Tr Fetch.PauseTip}" />
@@ -1066,6 +1080,22 @@
                          FontFamily="Cascadia Mono, Consolas, monospace" FontSize="11.5"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          IsUndoEnabled="False" />
+            </Grid>
+        </Border>
+
+        <!-- ═══════════ 状态栏 ═══════════ -->
+        <Border Grid.Row="3" Background="{DynamicResource PanelBackground}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+                Padding="14,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusBarText" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="StatusBarRight" Grid.Column="1" VerticalAlignment="Center"
+                           FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="12,0,0,0" />
             </Grid>
         </Border>
     </Grid>

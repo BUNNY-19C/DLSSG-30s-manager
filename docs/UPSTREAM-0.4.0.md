@@ -12,4 +12,3 @@
 - INI 按节写入，分别处理 `[Runtime] Mode` 与 `[SuperResolution] Mode`；`Optimized`、`Preset` 写入 `[DLSSG]`。
 - 新增 DLSS / XeSS、预设 C、光流精度、无 HUD 输入、INT8 超分、逐帧 GPU 计时。XeSS 渲染倍率钳到 2X，保留原先 DLSS 倍率设置供切回时使用。
 - 新建配置优化档位为 2，旧配置已有档位继续保留。复制、快照与持久化包含新字段。
-- 修正异环提示：旧版双代理方案不能直接套用到 0.4.0；新版入口需游戏内验证。

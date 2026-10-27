@@ -1,3 +1,24 @@
+## v1.12.0：适配上游 0.4.1
+
+- 移除已过时的游戏适配提示、自动名称匹配和前置文件检查，清理对应的文档与翻译。旧游戏库中的提示选择字段仍可读取并忽略。
+
+- 下载与离线导入支持 0.4.1，继续使用完整包 / 基础包与原有签名校验、逐文件部署和恢复流程。
+- XeSS 新增 2X / 3X / 4X 独立倍率、CoarseAt4K 和 Auto / 严格 / 关闭三态无 HUD 输入；切换引擎保留 DLSS 倍率。
+- 超分改为 Off、M-INT8、L-INT8、M-FP16、L-FP16。旧 On 保留原值，在应用新版前提示选择明确模式；旧无 HUD 偏好迁移为 Auto。
+- 新游戏使用优化档位 1、预设 A；已有档位和配置继续保留。旧 Auto 在 0.4.1 按 A 写入，旧部署快照兼容布尔配置字段。
+- 显示 NVIDIA R580+ 驱动要求，以及不支持的倍率或输入格式会拒绝启用的说明。
+- “查看日志”优先打开新版统一的 dlssg_sm86.log，仍支持旧版 JSONL 日志。
+
+### 升级说明
+
+更新本地 Mod 后，对目标游戏执行应用并重启游戏。下载不会自动改写游戏目录。原有游戏库、文件归属记录与恢复备份继续使用；旧版超分开启的游戏需先选择明确的新模式。
+
+### English
+
+Supports upstream 0.4.1: independent XeSS 2X / 3X / 4X, CoarseAt4K, tri-state HUD-less input and explicit SR modes. New profiles default to tier 1 and preset A while existing settings are retained. Legacy SR On requires an explicit new mode before applying; legacy HUD-less preference becomes Auto. The UI explains the R580+ driver requirement and prefers the unified log.
+
+---
+
 ## v1.11.0：上游 0.4.0 适配、下载与界面改进
 
 - **上游 0.4.0**：支持完整运行目录、DLSS / XeSS、FG Lite 预设 C、INT8 超分和逐帧 GPU 计时；状态检查自动接管已识别的手工安装。

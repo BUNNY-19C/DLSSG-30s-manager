@@ -31,12 +31,12 @@ Future releases provide the **portable build only**. Open the **[latest release]
 
 - **Requirements**: Windows 10 / 11 x64. **No installation or separate .NET runtime is required.** Place the executable in a writable folder and run it.
 - **Mod files**: downloaded separately on first start, or manually through “Download / update mod files”.
-- **Further reading**: [v1.11.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
+- **Further reading**: [v1.12.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
 
 ## First use
 
 1. **Prepare**: **close the game you want to modify.** Start the manager and wait for the Mod download to finish.
-2. **Add a game**: use “Scan Steam library”, “Scan folder…” or “Add game…”, then select a game. Confirm that the render directory contains the actual rendering executable; some games use a separate folder structure, as described under “Game guidance” below.
+2. **Add a game**: use “Scan Steam library”, “Scan folder…” or “Add game…”, then select a game. Confirm that the render directory contains the actual rendering executable rather than the launcher.
 3. **Adjust settings**: choose the frame-generation multiplier and optimization tier. Proxy entry, preset and log level are under advanced settings.
 4. **Deploy**: click “Deploy to this game”, or “Apply to game” for an existing deployment. Start the game and enable its corresponding frame-generation option.
 5. **Restore**: to undo the installation, close the game and click “Restore”.
@@ -60,18 +60,20 @@ Settings are stored per game. If saving fails, the error and retry action remain
 | **Saved, pending application** | Settings are saved but not applied; older records without a configuration snapshot also show this state |
 | **Applied** | Settings match the last deployment record; later changes require applying again and restarting the game |
 
-### Upstream 0.4.0
+### Upstream 0.4.1
 
-| Build | Multiplier ceiling | Optimization tiers | Preset |
+**NVIDIA R580 or newer is required.** Older drivers no longer fall back to PTX. Upstream may refuse older game frame-generation plugins; consult the game log for the reason.
+
+| Runtime | Multipliers | DLSS tiers | DLSS presets |
 |---|---|---|---|
-| `310.9.16` (current) | DLSS up to 6X; XeSS fixed at 2X | DLSS: 0–3, default 2 | Auto / A / B / C |
+| `310.9.16` (current) | DLSS 2X–6X; XeSS 2X / 3X / 4X | 0–3; new profiles default to 1 | A / B / C |
 
-- **Downloads and defaults**: downloads prefer the upstream **0.4.0 full Release package**, including both `sr` files required for INT8 super resolution. Per-file sources provide frame generation and XeSS only; super resolution requires the complete payload. New profiles default to `Optimized=2`, the DLSS engine and super resolution off; saved optimization tiers are preserved.
-- **Settings and behavior**:
-  - **Multiplier ceiling**: the DLSS multiplier is an upper limit; the actual multiplier still depends on the game's plugin.
-  - **Presets and XeSS**: preset C is FG Lite, offering higher speed with reduced quality on HUD and occlusion edges. XeSS has separate flow-resolution and HUD-less input settings.
-  - **Super resolution and timing**: INT8 super resolution only applies on RTX 20 / 30 GPUs when the game uses presets L / M. Per-frame GPU timing is in advanced settings.
-- **Legacy installations and upgrade cleanup**: only the current `310.9.16` runtime is offered. Older game profiles select it on load; game files are updated when you apply the configuration. Existing legacy deployment records remain available for restoration. Upgrading from 0.3.x applies the new INI, installs the runtime directory and removes redundant proxies whose ownership can be verified. **0.4.0 requires exactly one proxy**; do not reuse the older multi-proxy installation method.
+- **Downloads and defaults**: downloads target **0.4.1**. The full Release package includes SR files; the base package provides frame generation and XeSS. New profiles use DLSS, tier 1, preset A and SR off. Existing tiers and DLSS multipliers are retained. XeSS keeps a separate count: existing profiles retain 2X and can select 3X / 4X.
+- **Multipliers and presets**: the requested count must be supported or frame generation is refused; the game's menu can still choose less. Presets A / B / C override game and driver preferences. Legacy Auto remains visible but is written as A on 0.4.1. C is FG Lite, with lower quality on HUD and occlusion edges.
+- **XeSS**: adds `CoarseAt4K` (Coarse at output pixel counts of at least 3840×2160, otherwise Middle) and Auto / strict / off HUD-less input. The old preference migrates to Auto. Unsupported RGBA16F buffers no longer fall back to DLSS.
+- **Super resolution**: RTX 20 / 30 only. Select Off, M-INT8, L-INT8, M-FP16 or L-FP16 explicitly; the selected preset affects every quality mode. Quality, Balanced and DLAA can be slower than the game's preset K. Legacy On has no equivalent single mode: it is retained and requires an explicit choice before applying 0.4.1.
+- **Deployment and recovery**: one proxy plus the complete runtime directory; existing ownership checks and backups remain. Downloads do not update game files. Apply to each game and restart it.
+- **Logs**: the log action prefers `dlssg_sm86/logs/dlssg_sm86.log`. Per-frame GPU timing writes a separate `frame_timing.txt`.
 
 ### Updates and batch operations
 
@@ -79,16 +81,6 @@ Settings are stored per game. If saving fails, the error and retry action remain
 2. **Select games**: use “Select updates”, or check the games you want to process.
 3. **Run a batch operation**: review the current search and status filters, then click the batch deploy button. Batch restore also requires selecting games first. Normal batch operations process **only visible checked games**; hidden selections are counted separately.
 4. **Review results and retry**: review individual results. “Retry failed items” processes the previous failed games, regardless of whether they are currently visible.
-
-## Game guidance
-
-The following setups are recorded by this project. The guidance panel can suggest a game from its name or accept a manual choice, and checks whether related files exist. Presence alone does not verify version compatibility or in-game results. Other games can be added manually; consult upstream instructions when selecting entry names and settings.
-
-| Game | Setup notes |
-|---|---|
-| **Monster Hunter Wilds** | Install the `MHWILDS` package from [REFramework](https://github.com/praydog/REFramework) first. Check `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework/` before deploying the Mod. Avoid overwriting an existing prerequisite proxy. |
-| **Zenless Zone Zero** | Choose `d3d12.dll` under advanced settings → proxy entry. Recorded cases show other entry names being quarantined by anti-cheat; the anti-cheat warning still requires separate confirmation. |
-| **Neverness to Everness** | Confirm `Client\WindowsNoEditor\HT\Binaries\Win64`. Older setups used two proxies; 0.4.0 requires one and the complete runtime directory. Verify the entry again in the actual game. |
 
 - **Automatic adoption of manual installations**: status checks automatically adopt recognized manual installations, including community proxies identified by pinned hashes. No separate action is needed. Adoption records existing files without changing the game directory; manual installations have no original backup. Existing management records and backups are retained.
 

@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Interop;
+using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
 using DLSSGManager.ViewModels;
 using Microsoft.Win32;
 
@@ -95,11 +97,20 @@ public partial class MainWindow : Window
         _gamesView.LiveFilteringProperties.Add(nameof(GameEntry.Name));
         _gamesView.LiveFilteringProperties.Add(nameof(GameEntry.Status));
         _gamesView.IsLiveFiltering = true;
-        ((System.Collections.Specialized.INotifyCollectionChanged)_gamesView).CollectionChanged += (_, _) => UpdateManagementState();
+        ((System.Collections.Specialized.INotifyCollectionChanged)_gamesView).CollectionChanged += (_, _) =>
+        {
+            UpdateManagementState();
+            UpdateStatusBar();
+        };
         GameList.ItemsSource = _gamesView;
         if (_data.Games.Count > 0) GameList.SelectedIndex = 0;
 
         Loaded += OnLoaded;
+        Loaded += (_, _) =>
+        {
+            UpdateStatusBar();
+        };
+        InputBindings.Add(new KeyBinding(new RelayCommand(() => GameSearchBox.Focus()), Key.F, ModifierKeys.Control));
         InitializeManagement();
     }
 
@@ -118,6 +129,35 @@ public partial class MainWindow : Window
             Choice<int>.Localized(3, "Detail.Frames4X"),
             Choice<int>.Localized(4, "Detail.Frames5X"),
             Choice<int>.Localized(5, "Detail.Frames6X"),
+        };
+
+        XeSSFrameCombo.ItemsSource = new[]
+        {
+            Choice<int>.Localized(1, "Detail.Frames2X"),
+            Choice<int>.Localized(2, "Detail.Frames3X"),
+            Choice<int>.Localized(3, "Detail.Frames4X"),
+        };
+        FlowResolutionCombo.ItemsSource = new[]
+        {
+            Choice<string>.Localized("Coarse", "Detail.FlowCoarse"),
+            Choice<string>.Localized("Middle", "Detail.FlowMiddle"),
+            Choice<string>.Localized("Fine", "Detail.FlowFine"),
+            Choice<string>.Localized("CoarseAt4K", "Detail.FlowCoarseAt4K"),
+        };
+        HudlessCombo.ItemsSource = new[]
+        {
+            Choice<string>.Localized("Auto", "Detail.HudlessAuto"),
+            Choice<string>.Localized("1", "Detail.HudlessStrict"),
+            Choice<string>.Localized("0", "Detail.HudlessOff"),
+        };
+        SuperResolutionCombo.ItemsSource = new[]
+        {
+            Choice<string>.Localized("Off", "Detail.SrOff"),
+            Choice<string>.Fixed("M-INT8", "M-INT8"),
+            Choice<string>.Fixed("L-INT8", "L-INT8"),
+            Choice<string>.Fixed("M-FP16", "M-FP16"),
+            Choice<string>.Fixed("L-FP16", "L-FP16"),
+            Choice<string>.Localized("On", "Detail.SrLegacyOn"),
         };
 
         LogCombo.ItemsSource = new[]
@@ -548,7 +588,7 @@ public partial class MainWindow : Window
             ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.AvailableProxies))
             : source.ValidationMessage;
 
-        ApplySettingsSchema(source.IsLegacySchema, source.UsesRuntimeDirectory);
+        ApplySettingsSchema(source.IsLegacySchema, source.UsesRuntimeDirectory, source.Supports041);
 
         if (!source.IsValid) _log.Write(Loc.T("Fetch.IncompleteLog", source.ValidationMessage));
     }
@@ -560,13 +600,14 @@ public partial class MainWindow : Window
     /// KernelImage / HardwareBilinear), and the manager only writes keys the template defines. Leaving
     /// the other set on screen would offer controls that silently do nothing.
     /// </summary>
-    private void ApplySettingsSchema(bool legacy, bool runtimeDirectory = false)
+    private void ApplySettingsSchema(bool legacy, bool runtimeDirectory = false, bool schema041 = false)
     {
         ModernSettings.Visibility = legacy ? Visibility.Collapsed : Visibility.Visible;
         LegacySettings.Visibility = legacy ? Visibility.Visible : Visibility.Collapsed;
         Runtime040Settings.Visibility = runtimeDirectory ? Visibility.Visible : Visibility.Collapsed;
         Runtime040Advanced.Visibility = runtimeDirectory ? Visibility.Visible : Visibility.Collapsed;
         PresetCOption.Visibility = runtimeDirectory ? Visibility.Visible : Visibility.Collapsed;
+        Runtime041Note.Visibility = schema041 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateMod_Click(object sender, RoutedEventArgs e)

@@ -5,8 +5,8 @@ using System.Text.RegularExpressions;
 namespace DLSSGManager;
 
 /// <summary>
-/// A folder holding the project's published files: root <c>version.dll</c> + <c>dlssg_sm86.ini</c>,
-/// the four alternates under <c>altnative\</c>, and the two presets under <c>config\presets\</c>.
+    /// A folder holding the proxy, INI and runtime directory, with alternative proxies under
+    /// <c>altnative\</c> in the manager's local layout.
 /// Proxies the user adds themselves also live under <c>altnative\</c>, beside the published ones.
 /// </summary>
 public sealed class ModSource
@@ -20,7 +20,7 @@ public sealed class ModSource
     /// and dbghelp.dll.
     /// </summary>
     public static readonly string[] ProxyCandidates =
-        { "version.dll", "winmm.dll", "dinput8.dll", "dbghelp.dll", "dxgi.dll", "d3d12.dll" };
+        { "version.dll", "winmm.dll", "dbghelp.dll", "dinput8.dll", "dxgi.dll", "d3d12.dll" };
 
     /// <summary>
     /// Every name a proxy can legitimately occupy: the six above plus <c>winhttp.dll</c>, which 0.3.0
@@ -150,15 +150,27 @@ public sealed class ModSource
     /// </summary>
     public bool IsLegacySchema => IniText.Contains("Router=", StringComparison.OrdinalIgnoreCase);
     public bool UsesRuntimeDirectory => IniText.Contains("[DLSSG]", StringComparison.OrdinalIgnoreCase);
+    public bool Supports041 => Has041Schema(IniText) ||
+        (System.Version.TryParse(Version.TrimStart('v'), out var version) && version >= new System.Version(0, 4, 1));
+
+    /// <summary>The shipped 0.4.1 template documents explicit SR modes and defaults HUD-less to Auto.</summary>
+    public static bool Has041Schema(string text) =>
+        text.Contains("M-INT8", StringComparison.OrdinalIgnoreCase) ||
+        Regex.IsMatch(text, @"^\s*UseHudless\s*=\s*Auto\s*(?:;.*)?$", RegexOptions.IgnoreCase | RegexOptions.Multiline);
     public bool SupportsSuperResolution => SuperResolutionFiles.All(p => File.Exists(Path.Combine(Root, p)));
     public bool RequiresSingleProxy => IsLegacySchema || UsesRuntimeDirectory;
     public IEnumerable<string> DeployableRuntimeFiles => UsesRuntimeDirectory
         ? RuntimeFiles.Where(p => File.Exists(Path.Combine(Root, p))) : Array.Empty<string>();
 
     public string? ConfigurationError(GameProfile profile) => BuildCatalog.ConfigurationError(profile) ??
-        (!UsesRuntimeDirectory && (profile.Engine != "DLSS" || profile.SuperResolution || profile.Preset == "C" || profile.FrameTiming)
+        (!UsesRuntimeDirectory && (profile.Engine != "DLSS" || profile.SuperResolutionEnabled || profile.Preset == "C" || profile.FrameTiming)
             ? Loc.T("Manage.Need040") :
-         UsesRuntimeDirectory && profile.SuperResolution && !SupportsSuperResolution
+         Supports041 && profile.SuperResolutionMode == "On"
+            ? Loc.T("Manage.SelectSr041") :
+         !Supports041 && (profile.SuperResolutionMode is not ("Off" or "On") ||
+             profile.UsesXeSS && (profile.XeSSMaxGeneratedFrames > 1 || profile.HudlessMode == "1" || profile.FlowResolution == "CoarseAt4K"))
+            ? Loc.T("Manage.Need041") :
+         UsesRuntimeDirectory && profile.SuperResolutionEnabled && !SupportsSuperResolution
             ? Loc.T("Manage.NeedFullPackage") : null);
 
     public string IniText

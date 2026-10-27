@@ -118,6 +118,40 @@ public partial class MainWindow
         if (Selected is { } game) Management.Refresh(game, CurrentSource(game), _busy);
     }
 
+    private void UpdateStatusBar()
+    {
+        var total = _data.Games.Count;
+        var visible = _gamesView?.Cast<GameEntry>().Count() ?? 0;
+        var selected = Batch.SelectedCount;
+        var deployed = _data.Games.Count(g => g.Deployment is not null);
+
+        var parts = new List<string>();
+        
+        if (total == 0)
+        {
+            parts.Add(Loc.T("Status.NoGames"));
+        }
+        else
+        {
+            if (visible < total)
+                parts.Add(Loc.T("Status.Filtered", visible, total));
+            else
+                parts.Add(Loc.T("Status.Total", total));
+
+            parts.Add(Loc.T("Status.Deployed", deployed));
+            
+            if (selected > 0)
+                parts.Add(Loc.T("Status.Selected", selected));
+        }
+
+        StatusBarText.Text = string.Join("  •  ", parts);
+        
+        // Right side: batch operation progress (if running)
+        StatusBarRight.Text = Batch.IsRunning 
+            ? Loc.T("Status.BatchProgress", Batch.CompletedCount, Batch.SelectedCount)
+            : "";
+    }
+
     private void WindowClosing(object? sender, CancelEventArgs e)
     {
         if (_busy || _statusRefreshRunning || _pendingChecks > 0)

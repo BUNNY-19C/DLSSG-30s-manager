@@ -138,8 +138,18 @@ public static class LibraryStore
         g.Profile.Engine = string.Equals(g.Profile.Engine, "XeSS", StringComparison.OrdinalIgnoreCase) ? "XeSS" : "DLSS";
         g.Profile.FlowResolution = g.Profile.FlowResolution?.Trim().ToLowerInvariant() switch
         {
-            "coarse" => "Coarse", "fine" => "Fine", _ => "Middle",
+            "coarse" => "Coarse", "fine" => "Fine", "coarseat4k" => "CoarseAt4K", _ => "Middle",
         };
+        g.Profile.HudlessMode = g.Profile.HudlessMode?.Trim().ToLowerInvariant() switch
+        {
+            "1" => "1", "0" => "0", _ => "Auto",
+        };
+        g.Profile.SuperResolutionMode = g.Profile.SuperResolutionMode?.Trim().ToUpperInvariant() switch
+        {
+            "M-INT8" => "M-INT8", "L-INT8" => "L-INT8", "M-FP16" => "M-FP16", "L-FP16" => "L-FP16",
+            "ON" => "On", _ => "Off",
+        };
+        g.Profile.XeSSMaxGeneratedFrames = Math.Clamp(g.Profile.XeSSMaxGeneratedFrames, 1, 3);
 
         // Libraries written before 0.3.3 stored Optimized as a boolean; migrate once so the tier
         // becomes the single source of truth (true = bit-identical speedups = tier 1).
@@ -210,7 +220,7 @@ public static class IniTemplate
         ["Level"] = Math.Clamp(p.LogLevel, 0, 3).ToString(),
         ["Engine"] = p.Engine,
         ["FlowResolution"] = p.FlowResolution,
-        ["UseHudless"] = p.UseHudless ? "1" : "0",
+        ["UseHudless"] = p.HudlessMode,
 
         // 0.2.x (kept so an older payload still receives the user's settings)
         ["Router"] = p.Router,
@@ -218,7 +228,7 @@ public static class IniTemplate
         ["HardwareBilinear"] = p.HardwareBilinear ? "1" : "0",
     };
 
-    public static string Render(string templateText, GameProfile p)
+    public static string Render(string templateText, GameProfile p, bool? supports041 = null)
     {
         var text = string.IsNullOrWhiteSpace(templateText) ? FallbackTemplate(p) : templateText;
         var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
@@ -226,6 +236,11 @@ public static class IniTemplate
         var values = Values(p);
         var section = "";
         var modern = text.Contains("[DLSSG]", StringComparison.OrdinalIgnoreCase);
+        var schema041 = supports041 ?? ModSource.Has041Schema(text);
+        if (schema041 && p.SuperResolutionMode == "On")
+            throw new InvalidOperationException(Loc.T("Manage.SelectSr041"));
+        values["Preset"] = schema041 && p.Preset == "Auto" ? "A" : p.Preset;
+        values["UseHudless"] = !schema041 && p.HudlessMode == "Auto" ? "1" : p.HudlessMode;
 
         for (var i = 0; i < lines.Count; i++)
         {
@@ -237,7 +252,7 @@ public static class IniTemplate
             if (modern && key.Equals("Mode", StringComparison.OrdinalIgnoreCase))
             {
                 if (section.Equals("SuperResolution", StringComparison.OrdinalIgnoreCase))
-                    lines[i] = "Mode=" + (p.SuperResolution ? "On" : "Off");
+                    lines[i] = "Mode=" + p.SuperResolutionMode;
                 continue;
             }
             if (modern)
@@ -251,7 +266,8 @@ public static class IniTemplate
                 if (!section.Equals(expectedSection, StringComparison.OrdinalIgnoreCase)) continue;
             }
             if (values.TryGetValue(key, out var v))
-                lines[i] = $"{key}={(key.Equals("MaxGeneratedFrames", StringComparison.OrdinalIgnoreCase) && modern && p.UsesXeSS ? "1" : v)}";
+                lines[i] = $"{key}={(key.Equals("MaxGeneratedFrames", StringComparison.OrdinalIgnoreCase) && modern && p.UsesXeSS
+                    ? (schema041 ? Math.Clamp(p.XeSSMaxGeneratedFrames, 1, 3).ToString() : "1") : v)}";
         }
 
         if (modern)
@@ -294,11 +310,11 @@ public static class IniTemplate
         "Engine=DLSS",
         $"MaxGeneratedFrames={Math.Clamp(p.MaxGeneratedFrames, 1, 5)}",
         "[DLSSG]",
-        "Optimized=2",
-        "Preset=Auto",
+        "Optimized=1",
+        "Preset=A",
         "[XeSSFG]",
         "FlowResolution=Middle",
-        "UseHudless=1",
+        "UseHudless=Auto",
         "[Runtime]",
         "Mode=Bundled",
         "[SuperResolution]",

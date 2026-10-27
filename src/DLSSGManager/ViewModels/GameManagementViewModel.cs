@@ -31,9 +31,6 @@ public sealed partial class GameManagementViewModel : ObservableObject
     [ObservableProperty]
     private string _payloadStatus = "";
 
-    [ObservableProperty]
-    private string _guidance = "";
-
     /// <summary>The message of the last failed save, or null while saving works.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSaveFailure))]
@@ -76,7 +73,6 @@ public sealed partial class GameManagementViewModel : ObservableObject
             source.IsValid ? source.Version : Loc.T("Manage.NotDownloaded"),
             game.Deployment?.RuntimeModel is { Length: > 0 } build ? build : Loc.T("Common.Unknown"),
             game.Deployment?.ModVersion ?? "—");
-        Guidance = GameGuidance.Describe(game);
     }
 
     /// <summary>Re-renders the text that does not depend on a selected game.</summary>

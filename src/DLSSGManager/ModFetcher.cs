@@ -76,16 +76,20 @@ public static class ModFetcher
                                            uri.Host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>
-    /// Certificate the project signs every proxy DLL with, as 0.3.0 publishes it in its own README:
-    /// <c>CN=DLSSG for SM86 (self-signed)</c>, SHA-1 85BA66762F851E49148D706915D09026281418E6. The
-    /// previous pin (A994735E…) belonged to the 0.2.x release line, whose files are no longer part of the
-    /// payload.
+    /// Known project signing certificates. The 0.4.1 Release archive and the official 0.4.1 tag's
+    /// version.dll both use CN=DLSSG Throwaway Test, D963A96D623B85F67B7B323BEB353CEE90225D40
+    /// (verified 2026-10-27). Its bundled README still names the previous certificate, retained here
+    /// for importing older payloads. These pins do not replace signature-integrity checks.
     ///
     /// A mismatch on a mirror means the file is not the project's build, so the download is rejected. A
     /// mismatch on GitHub's own endpoints is logged as a warning instead, so upstream rotating its
     /// self-signed certificate does not brick the updater.
     /// </summary>
-    private const string PinnedCertThumbprint = "85BA66762F851E49148D706915D09026281418E6";
+    private static readonly string[] PinnedCertThumbprints =
+    {
+        "85BA66762F851E49148D706915D09026281418E6",
+        "D963A96D623B85F67B7B323BEB353CEE90225D40",
+    };
 
     /// <summary>Signer subject fragment used as a secondary sanity check on any source.</summary>
     private const string ExpectedSignerSubject = "DLSSG";
@@ -118,7 +122,7 @@ public static class ModFetcher
     private const string ProbeFile = "dlssg_sm86/kernels/fg_kernels.dll";
 
     private const string RepoPath = "sdli1995/dlssg_for_sm86";
-    public const string SupportedRelease = "0.4.0";
+    public const string SupportedRelease = "0.4.1";
     private const string RepoRef = SupportedRelease;
 
     /// <summary>
@@ -1321,7 +1325,7 @@ public static class ModFetcher
                 var expected = artifact.Nvidia ? "NVIDIA Corporation" : ExpectedSignerSubject;
                 if (!intact || !subject.Contains(expected, StringComparison.OrdinalIgnoreCase))
                     unsigned.Add(Path.GetFileName(artifact.SourcePath));
-                else if (!artifact.Nvidia && !string.Equals(cert!.Thumbprint, PinnedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+                else if (!artifact.Nvidia && !PinnedCertThumbprints.Contains(cert!.Thumbprint, StringComparer.OrdinalIgnoreCase))
                     pinMismatch.Add(Path.GetFileName(artifact.SourcePath));
             }
         }

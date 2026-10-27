@@ -479,6 +479,8 @@ public static class Gpu
         else if (family is not null)
             parts.Add(Loc.T("Gpu.RouteShort", RouteForFamily(family)));
 
+        parts.Add(Loc.T("Gpu.DriverFloor041"));
+
         return string.Join(" · ", parts);
     }
 
@@ -542,6 +544,8 @@ public static class Gpu
             "Turing" => Loc.T("Gpu.AdviceTuring"),
             _ => Loc.T("Gpu.AdviceUnknown"),
         });
+
+        parts.Add(Loc.T("Gpu.DriverFloor041"));
 
         return string.Join(" ", parts);
     }

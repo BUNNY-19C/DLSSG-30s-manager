@@ -44,9 +44,9 @@ public sealed class GameProfile : Observable
     private string _kernelImage = "PTX";
     private bool _hardwareBilinear;
     private bool _enabled = true;
-    private int _optimizedTier = 2;
+    private int _optimizedTier = 1;
     private bool? _optimized;
-    private string _preset = "Auto";
+    private string _preset = "A";
     private int _maxGeneratedFrames = 3;
     private int _logLevel = 1;
     private bool _diagnostics;
@@ -54,8 +54,9 @@ public sealed class GameProfile : Observable
     public string RuntimeModel { get => _runtimeModel; set => Set(ref _runtimeModel, value); }
     private string _engine = "DLSS";
     private string _flowResolution = "Middle";
-    private bool _useHudless = true;
-    private bool _superResolution;
+    private string _hudlessMode = "Auto";
+    private string _superResolutionMode = "Off";
+    private int _xeSSMaxGeneratedFrames = 1;
     private bool _frameTiming;
     public string Engine
     {
@@ -63,8 +64,27 @@ public sealed class GameProfile : Observable
         set { if (Set(ref _engine, value)) { Raise(nameof(UsesDlss)); Raise(nameof(UsesXeSS)); } }
     }
     public string FlowResolution { get => _flowResolution; set => Set(ref _flowResolution, value); }
-    public bool UseHudless { get => _useHudless; set => Set(ref _useHudless, value); }
-    public bool SuperResolution { get => _superResolution; set => Set(ref _superResolution, value); }
+    public string HudlessMode { get => _hudlessMode; set => Set(ref _hudlessMode, value); }
+    public string SuperResolutionMode { get => _superResolutionMode; set => Set(ref _superResolutionMode, value); }
+    public int XeSSMaxGeneratedFrames { get => _xeSSMaxGeneratedFrames; set => Set(ref _xeSSMaxGeneratedFrames, value); }
+
+    // Read older libraries and applied snapshots without writing the retired boolean fields back.
+    // The old true meant "prefer HUD-less when available", which is Auto rather than strict 1.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? UseHudless
+    {
+        get => null;
+        set { if (value.HasValue) HudlessMode = value.Value ? "Auto" : "0"; }
+    }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? SuperResolution
+    {
+        get => null;
+        set { if (value.HasValue) SuperResolutionMode = value.Value ? "On" : "Off"; }
+    }
+
+    [JsonIgnore] public bool SuperResolutionEnabled => SuperResolutionMode != "Off";
     public bool FrameTiming { get => _frameTiming; set => Set(ref _frameTiming, value); }
     [JsonIgnore] public bool UsesDlss => Engine != "XeSS";
     [JsonIgnore] public bool UsesXeSS => Engine == "XeSS";
@@ -74,7 +94,7 @@ public sealed class GameProfile : Observable
 
     /// <summary>
     /// 0.3.3: the consistency tier — how far the generated image may move from the official runtime.
-    /// 0 stock, 1 bit-identical speedups, 2 lossy image kernels (0.4.0 factory default),
+    /// 0 stock, 1 bit-identical speedups (0.4.1 default), 2 lossy image kernels,
     /// 3 all lossy (fastest). Replaces the 0.3.0 boolean <see cref="Optimized"/>.
     /// </summary>
     public int OptimizedTier { get => _optimizedTier; set => Set(ref _optimizedTier, value); }
@@ -86,7 +106,7 @@ public sealed class GameProfile : Observable
     /// </summary>
     public bool? Optimized { get => _optimized; set => _optimized = value; }
 
-    /// <summary>0.3.0: DLSS-G render preset. Auto lets the game or the driver profile decide.</summary>
+    /// <summary>DLSS-G preset. 0.4.1 pins A/B/C; a retained legacy Auto runs as A on that schema.</summary>
     public string Preset { get => _preset; set => Set(ref _preset, value); }
 
     /// <summary>0.2.x only: SM86 for RTX 30 series, SM75 for RTX 20 series.</summary>
@@ -98,8 +118,8 @@ public sealed class GameProfile : Observable
     /// <summary>0.2.x only: 0 = exact output, 1 = optional approximate sampling (SM86 only).</summary>
     public bool HardwareBilinear { get => _hardwareBilinear; set => Set(ref _hardwareBilinear, value); }
 
-    /// <summary>Capability limit 1/2/3/4/5, mapping to 2X/3X/4X/5X/6X. Upstream's factory default is
-    /// 3 (4X) since 0.3.3 — users found the previous maximum too high; 6X needs the 310.9 build.</summary>
+    /// <summary>DLSS generated frames per real frame: 1-5 maps to 2X-6X. 0.4.1 requires the requested
+    /// count to be supported; XeSS has its own 1-3 setting so engine switches retain DLSS's count.</summary>
     public int MaxGeneratedFrames { get => _maxGeneratedFrames; set => Set(ref _maxGeneratedFrames, value); }
 
     /// <summary>0 = off, 1 = errors, 2 = diagnostics, 3 = verbose.</summary>
@@ -122,8 +142,9 @@ public sealed class GameProfile : Observable
         Diagnostics = Diagnostics,
         Engine = Engine,
         FlowResolution = FlowResolution,
-        UseHudless = UseHudless,
-        SuperResolution = SuperResolution,
+        HudlessMode = HudlessMode,
+        SuperResolutionMode = SuperResolutionMode,
+        XeSSMaxGeneratedFrames = XeSSMaxGeneratedFrames,
         FrameTiming = FrameTiming,
     };
 
@@ -141,8 +162,9 @@ public sealed class GameProfile : Observable
         Diagnostics = other.Diagnostics;
         Engine = other.Engine;
         FlowResolution = other.FlowResolution;
-        UseHudless = other.UseHudless;
-        SuperResolution = other.SuperResolution;
+        HudlessMode = other.HudlessMode;
+        SuperResolutionMode = other.SuperResolutionMode;
+        XeSSMaxGeneratedFrames = other.XeSSMaxGeneratedFrames;
         FrameTiming = other.FrameTiming;
     }
 }
@@ -192,9 +214,7 @@ public sealed class DeploymentInfo
 public sealed class GameEntry : Observable
 {
     private bool _batchSelected;
-    private string _compatibilityId = "auto";
     [JsonIgnore] public bool BatchSelected { get => _batchSelected; set => Set(ref _batchSelected, value); }
-    public string CompatibilityId { get => _compatibilityId; set => Set(ref _compatibilityId, value); }
     /// <summary>
     /// Sentinel preference value meaning "let the manager pick an entry name". Lives on the model
     /// because the default below and <c>DeploymentService</c>'s comparisons must agree on the exact

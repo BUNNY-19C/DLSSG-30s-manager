@@ -2,9 +2,15 @@
 
 面向接手本项目的人（或未来的自己）。README 讲"怎么用"，这里讲"为什么这么做、改的时候会踩到什么"。
 
-- 当前版本：**v1.11.0**（上游 0.4.0 适配、下载源测速、离线 ZIP 导入、ViewModel 拆分与主题/语言修复）
+- 当前版本：**v1.12.0**（上游 0.4.1 适配，以及下载、主题、语言与视图模型改进）
+- **上游 0.4.1**：配置、兼容迁移与驱动要求见 [0.4.1 适配记录](UPSTREAM-0.4.1.md)。旧版超分 On 在应用新版前要求主动选择显式模式；已有档位与各引擎倍率保留。
 - 后续仅发布 Windows x64 自包含单文件绿色版，统一使用 `Portable` 发布配置；产物为 `publish/DLSSGManager.exe`。
-- **v1.11.0 已适配上游 0.4.0**：完整包下载、目录化运行负载、单代理升级、新配置与恢复规则见 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。下面描述 0.3.x 待机共存与 310.1 下载的历史说明不适用于 0.4.0。
+- **v1.11.0 已适配上游 0.4.0**：完整包下载、目录化运行负载、单代理升级、新配置与恢复规则见 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。
+- **v1.12.0 重构内容**：
+  - 下载链路：SourceForge 镜像源、并发测速排序、断点续传、离线 ZIP 导入、完整包/基础包选择
+  - 主题系统：跟随 Windows 深浅色模式（"system" 选项 + WM_SETTINGCHANGE 监听）
+  - 语言热切换：无闪烁的单帧更新（LocalizedText / Choice<T> / LocalizedString 架构）
+  - MVVM 拆分：GameManagementViewModel / BatchViewModel / ProtectionViewModel + IBatchHost 接口
 - 改进范围：见 [UI 落地清单](UI-IMPROVEMENTS.md)。
 - 仓库：`github.com/BUNNY-19C/DLSSG-30s-manager`，打 tag 即发版
 
@@ -49,11 +55,12 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile
 src/DLSSGManager/
 ├─ DeploymentService.cs 1087 部署/恢复/接管/状态判定——唯一写游戏目录的地方
 ├─ MainWindow.xaml      1055 界面布局（顶栏/信息条/侧边栏/卡片详情/进度条/日志条）
-├─ ModFetcher.cs        980  下载：多源链、DNS/证书校验、进度、暂停门、解压、版本探测
-├─ MainWindow.xaml.cs   937  窗口装配、语言与主题切换、游戏列表筛选、下载面板、GPU 行
+├─ ModFetcher.cs        1280 下载：多源链+SourceForge、并发测速、暂停/跳过门、断点续传、完整/基础包、离线导入
+├─ MainWindow.xaml.cs   710  窗口装配、主题/语言切换、游戏列表筛选、视图模型绑定
 ├─ Gpu.cs               548  显卡探测、架构判定、注册表显示名读写、INF 间接字符串解析
-├─ Strings.zh/en.cs     490  两张字符串表（必须逐键对齐）
-├─ MainWindow.Actions.cs 432 部署/恢复/全部部署/扫描/路径选择/打开与启动处理器
+├─ Strings.zh/en.cs     534  两张字符串表（必须逐键对齐）
+├─ MainWindow.Actions.cs 432 部署/恢复单个游戏/扫描/路径选择/打开与启动处理器
+├─ SourcePickerDialog   420  下载源选择：包类型、测速结果、拖拽导入、进度面板（暂停/跳过/取消）
 ├─ Models.cs            343  GameEntry / GameProfile / DeploymentInfo / AppData
 ├─ ModSource.cs         315  本地负载：入口名、0.4.0 运行目录、配置约束、导入自定义代理
 ├─ Store.cs             309  library.json 读写与归一化、INI 模板按节渲染
@@ -61,20 +68,26 @@ src/DLSSGManager/
 ├─ AntiCheat.cs         281  内核级反作弊识别、隔离副本查找
 ├─ Shell.cs             231  打开目录/文件、启动游戏、提权重启
 ├─ ModSourceLocator.cs  191  负载目录解析（仓库检出 / 便携 / 用户目录）
-├─ MainWindow.Management.cs 176  保存状态（未保存/待应用/已应用）与关闭流程
-├─ Localization.cs      115  Loc.T、语言归一化
-├─ MainWindow.Batch.cs  112  批量：显式勾选、逐项结果、失败重试
-├─ MainWindow.Protection.cs 105  添加目录时立即提示内核级反作弊
-├─ App.xaml.cs          105  启动、--fetch 命令行下载、全局异常兜底
-├─ ManagementState.cs   100  配置快照（见 4.9）、310.1 构建限制、游戏特例指引
-├─ SourcePickerDialog / GpuNameDialog   下载源选择、显卡显示名编辑
-├─ 其余工具：Native、OutputLog、Converters、Theme、ThemeKeys、Palette、Version、TrExtension
+├─ MainWindow.Management.cs 200  保存状态（未保存/待应用/已应用）与关闭流程
+├─ Localization.cs      220  Loc.T、LocalizedText 延迟本地化消息、Choice<T> / LocalizedString
+├─ ViewModels/
+│  ├─ GameManagementViewModel.cs  180 单游戏配置状态、保存/应用按钮、构建警告
+│  ├─ BatchViewModel.cs            160 批量操作：勾选集、部署/恢复命令、结果面板
+│  └─ ProtectionViewModel.cs       90  反作弊横幅、部署工具提示、批量通知
+├─ MainWindow.Batch.cs  40   IBatchHost 实现（批量操作宿主接口）
+├─ MainWindow.Protection.cs 100  添加目录时立即提示内核级反作弊
+├─ Theme.cs / ThemeKeys.cs   主题系统：跟随 Windows ("system" 偏好 + 注册表读取)
+├─ App.xaml / App.xaml.cs    启动、--fetch 命令行下载、LocalizedString 数据模板
+├─ ManagementState.cs   100  配置快照（见 4.10）、运行库构建约束
+├─ GpuNameDialog        显卡显示名编辑
+├─ 其余工具：Native、OutputLog、Converters、Palette、Version、TrExtension
 └─ Themes/Dark.xaml + Light.xaml   两套主题字典（键必须完全一致）
 
 mod/                          下载得到的上游负载，不入库
+test/DLSSGManager.Tests/      xUnit 测试项目（INI 渲染、配置快照、负载识别、部署往返）
 ```
 
-**分层原则**：模型与领域层（Models / Gpu / Detection / DeploymentService / ModFetcher / AntiCheat / Store）**不得引用 WPF 类型**，界面依赖集中在窗口与展示层。
+**分层原则**：模型与领域层（Models / Gpu / Detection / DeploymentService / ModFetcher / AntiCheat / Store）**不得引用 WPF 类型**，界面依赖集中在窗口、展示层与视图模型。视图模型（ViewModels/）持有界面状态但不直接操作控件，通过接口（如 IBatchHost）回调窗口。
 
 ---
 
@@ -84,11 +97,16 @@ mod/                          下载得到的上游负载，不入库
 
 ### 4.1 界面
 
-- **颜色一律 `DynamicResource`**。`StaticResource` 在元素创建时解析一次，切换主题后界面停在旧配色。
+- **颜色一律 `DynamicResource`**。`StaticResource` 在元素创建时解析一次，切换主题后界面停在旧配置。
 - **两套主题字典键必须一致**，切换主题时才能正确解析全部资源。
 - **列表状态色需要显式重发**：`ThemeBrushConverter` 只在源属性通知时重算，切主题要调 `GameEntry.RaiseThemeColors()`。
 - **对话框有自己的资源作用域**，主窗口的隐式样式传不进去，按钮/输入/滚动条样式要在每个 Window 里重声明。
-- 文字从代码设置的（下拉项、GPU 建议行）不跟随语言绑定，必须走 `BuildLocalizedCombos` / `RefreshCodeText`。
+- **主题跟随系统**（v1.12.0 新增）：`Theme.ApplyPreference("system")` 通过注册表读取 Windows 深浅色模式，MainWindow 在 `OnSourceInitialized` 中添加 `WM_SETTINGCHANGE` 消息钩子，监听 "ImmersiveColorSet" 变更并调用 `AfterThemeSwitch()`。
+- **语言热切换无闪烁**（v1.12.0 重构）：
+  - `LocalizedText` 持有 key+args，读时渲染为当前语言；`GameEntry.StatusMessage` 与 `DeploymentService.GameCheck.Detail` 现为 `LocalizedText?`，不再是固定字符串。
+  - `Choice<T>` 泛型（替代 `Choice` / `TextChoice` record），下拉项通过 `INotifyPropertyChanged` 通知文本变更，无需重建列表。
+  - `LocalizedString` 用于 ComboBoxItem.Content（WPF 会复制 Content 导致绑定失效），`App.xaml` 定义隐式 DataTemplate 渲染它。
+  - 语言切换时所有文本在一帧内更新完毕（`Loc.SetLanguage` 发出通知 → 绑定与 `Choice<T>.Text` 重新求值），游戏详情不需要重新检查。
 
 ### 4.2 线程纪律（不要再退回 ContinueWith）
 
@@ -112,18 +130,13 @@ mod/                          下载得到的上游负载，不入库
 
 **代理入口集合**：`OwnedEntryNames(prev)` = 已知入口名 ∪ 记录 `Files`（排除 INI）——自定义命名的代理只活在记录里，漏了它恢复就删不干净。
 
-### 4.4 代理共存语义（0.3.3 前后不同）
+### 4.4 代理数量与清理
 
-- **0.2.x 负载**：同目录两个代理 = 两条推理管线 = 崩，所以 `Deploy` 仍会删掉多余代理（判据是 `source.IsLegacySchema`）。
-- **0.3.3+ 负载**：上游改成**待机机制**——先加载的干活，其余只转发导出，不装钩子。因此部署**保留**多余代理、日志逐个注明「保留待机」，并写入 `DeploymentInfo.Files`（不记录就清不掉）。
-
-**`Evaluate` 的状态判定不分 schema**：只要发现多于一个自家代理，就在详情里附一句「另有 N 个待机转发」并保持 `Deployed`——0.3.3 之前那是故障，现在是正常态。要区分的话得看 `IsLegacySchema`，但当前没有这个需求。
-
-**异环（Neverness to Everness）就是要三个文件一起放**（`d3d12.dll` + `dinput8.dll` + `dlssg_sm86.ini`），这是"不能收敛代理"的直接原因。
+当前 0.4.x 使用一个代理和完整运行目录，按 `ModSource.RequiresSingleProxy` 决定是否清理多余入口。仅清理能确认归属的文件，并保留原始备份与逐文件记录。旧版 0.3.x 的待机代理规则只适用于对应旧负载，不能作为新版安装建议。
 
 ### 4.5 游戏发现（Detection）
 
-双标记扫描：`nvngx_dlssg.dll`（游戏自带 DLSS-G 负载）**或** `dlssg_sm86.ini`（本项目独有文件名，识别手装副本）。只看前者会漏掉不自带 DLSS-G 的游戏——异环就是这样，它的目录还是深层 UE 结构 `Client\WindowsNoEditor\HT\Binaries\Win64`。
+双标记扫描：`nvngx_dlssg.dll`（游戏自带 DLSS-G 负载）**或** `dlssg_sm86.ini`（本项目独有文件名，识别手装副本）。只看前者会漏掉不自带 DLSS-G、但已手工部署本项目的游戏。
 
 `GenericFolderNames` 用于跳过无意义的目录名（Win64/Binaries/Client/…）取游戏名；上游标记命中后向上找 3 层找主程序。
 
@@ -137,17 +150,52 @@ mod/                          下载得到的上游负载，不入库
 4. 载荷校验：所有 DLL 必须带项目签名；**镜像源**还必须匹配证书 pin（`85BA6676…`；GitHub 官方端点不匹配只记警告，容忍上游换证书）
 5. **校验通过前不写 mod 目录**——所以取消/失败都不会破坏已有负载
 
+**v1.12.0 下载架构重构**：
+- **多源支持**：GitHub Release 资产重定向 + SourceForge 镜像（7 个源）；自动添加 `dl_source=zc` 标签用于上游流量分析。
+- **并发测速**：`ProbeSourcesAsync` 并发 GET 前 16KB，按延迟与吞吐量排序（HEAD 测不出真实速度）。
+- **暂停/跳过/取消**：`DownloadGate` 协调暂停门（await `PausedEvent`）+ 每源跳过标志（`_skipCurrent`）+ 整体取消令牌。
+- **断点续传**：Range 请求 + 停顿检测（5 秒无进度自动重试当前块）+ RangeNotSatisfiable 处理。
+- **完整包 / 基础包**：`PayloadPackage.Full` 含超分内核（~90MB），`Base` 仅帧生成（~46MB）；用户可在 `SourcePickerDialog` 选择。
+- **离线导入**：`ImportArchiveAsync` 支持拖拽 .zip 或浏览文件，解压至临时目录并按完整包/基础包验证签名，匹配后移入 `mod/`。
+- **安全解压**：条目数上限 500、单条目 200MB、总大小 300MB，自动展平单目录包装层（archive-wrapper flattening）。
+- **TransferAsync 辅助方法**：统一 Range 请求、进度回调、速度计算（`IProgress<FetchProgress>`），供下载与测速共用。
+
+**SourcePickerDialog 新对话框**（替代主窗口嵌入式面板）：
+- 包类型选择（完整/基础）+ 构建目录选择（310.9 / 310.1）
+- 速度测试结果 + Retest 按钮
+- 源列表显示实时速度（fastest / available / unavailable）
+- 拖拽区 + Browse 按钮用于离线 ZIP 导入
+- 嵌入式进度面板（Pause / Skip / Stop 按钮）
+- 安装成功后 `Installed` 标志返回主窗口刷新
+
 ### 4.7 INI 模板与 schema 演进
 
 `IniTemplate.Render` **只覆写模板里已存在的键**。上游换 schema 时（0.2.x 的 Router/KernelImage → 0.3.x 的 Enabled/Optimized/Preset），旧键自然不写、新键自然生效，不需要分支。`IsLegacySchema`（检测 `Router=`）决定界面显示哪组控件。
 
+**按节写入**：`[Runtime] Mode` 保留上游模板值，`[SuperResolution] Mode` 写显式超分模式；`Optimized` / `Preset` 写 `[DLSSG]`，`FlowResolution` / `UseHudless` 写 `[XeSSFG]`，`FrameTiming` 写 `[Logging]`。节外同名键不被误写。
+
+### 4.8 MVVM 视图模型拆分（v1.12.0）
+
+引入 CommunityToolkit.Mvvm 8.4.2（`ObservableObject` / `RelayCommand`），三个独立视图模型替代 MainWindow 内联状态：
+
+- **GameManagementViewModel**：单游戏配置状态（未保存/待应用/已应用）、保存/应用按钮启用逻辑、构建选择警告（310.1 限制检查）。
+- **BatchViewModel**：批量操作（勾选集合、可见项计数、部署/恢复命令）、结果面板（成功/失败计数、逐项日志）、失败重试。
+- **ProtectionViewModel**：反作弊检测状态（横幅显示）、部署按钮工具提示（内核级反作弊警告）、批量操作提示。
+
+**IBatchHost 接口**：主窗口实现 `IEnumerable<GameEntry> VisibleGames { get; }` / `void RefreshGameView()` / `void ShowResult(bool, string)` / `void LogDetails(IEnumerable<string>)`，BatchViewModel 通过接口回调而不直接操作控件。MainWindow.Batch.cs 显式实现该接口（避免公开暴露内部方法）。
+
+**好处**：
+1. 单游戏详情与批量操作的状态逻辑分离，MainWindow.xaml.cs 不再包含按钮启用计算。
+2. 视图模型可单独测试（模拟 `IBatchHost` 即可验证命令逻辑）。
+3. 命令绑定替代事件处理器（`Command="{Binding Batch.DeployCommand}"` 而非 `Click="DeployAll_Click"`）。
+
 配置面板只显示当前 schema 的键——显示另一组是死控件。
 
-### 4.8 版本标记
+### 4.9 版本标记
 
 0.3.0 起上游 INI 不再有 `; Native x.y.z.` 横幅，所以版本号靠两级：INI 横幅 → README 标题 → 下载时探测到的版本写进 `.manager-version` 标记文件（`--fetch` 路径也必须探测，否则徽章停在旧版本——修过一次）。
 
-### 4.9 配置快照（"待应用"提示）
+### 4.10 配置快照（"待应用"提示）
 
 部署时把 `RenderDir` / `PreferredProxy` / `Profile` 序列化成 JSON 存进 `DeploymentInfo.AppliedConfiguration`，`ConfigurationState.NeedsApply` 拿它和当前配置比较。
 
@@ -204,12 +252,12 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 
 按价值排序：
 
-1. **310.1 构建变体现已支持（当前工作区）**：DLL 下载路径加 `310.1/`，INI 仍取上游根目录；本地使用 `mod/variants/310.1` 与默认根构建分开。`ManagementState.cs` 定义构建限制与配置快照，`MainWindow.Management.cs` 负责保存状态与关闭流程，`MainWindow.Batch.cs` 负责显式勾选、逐项结果与失败重试。旧记录没有应用快照时显示待应用，不臆测其配置。
-2. **安全审计缺失**：Mimosa 扫描在 v1.8.4 之后多次不可用，那几次提交没有扫描结论。工具恢复后值得补跑一次深度扫描。
-3. **构造审查的 Optional 项**（未做，风险低）：
-   - `ZipFile.ExtractToDirectory` 不限制解压总量（恶意镜像可炸磁盘；签名校验仍在写盘前，属可用性问题）
+1. **310.1 构建变体现已支持（当前工作区）**：DLL 下载路径加 `310.1/`，INI 仍取上游根目录；本地使用 `mod/variants/310.1` 与默认根构建分开。`ManagementState.cs` 定义构建限制与配置快照，`MainWindow.Management.cs` 负责保存状态与关闭流程，`MainWindow.Batch.cs` 负责 IBatchHost 实现。旧记录没有应用快照时显示待应用，不臆测其配置。
+2. **构造审查的 Optional 项**（未做，风险低）：
+   - `ExtractArchive` 限制了条目数（500）、单条目大小（200MB）、总解压量（300MB），防止 zip 炸弹（v1.12.0 已实现）。
    - 保存失败与关闭保护已落地：Save 返回结果；UI 保留内存记录和重试提示，批量保存失败停止后续项；Closing 等待操作完成或取消下载后退出。此流程不覆盖强制结束进程或断电。
-4. **反作弊规则表**与 GPU 设备 ID 区间是经验数据，遇到误判按实际游戏样本增补。
+3. **反作弊规则表**与 GPU 设备 ID 区间是经验数据，遇到误判按实际游戏样本增补。
+4. **测试覆盖**：`test/DLSSGManager.Tests` 包含 7 个最小测试用例（INI 按节渲染、配置快照、310.1 构建规则、负载识别、部署还原往返、下载源策略），但缺少 UI 自动化测试与集成测试。主窗口拆分为 5 个分部类（xaml.cs / Actions / Management / Batch / Protection），视图模型引入后可单独测试命令逻辑，但尚未编写 ViewModel 单元测试。
 
 ---
 

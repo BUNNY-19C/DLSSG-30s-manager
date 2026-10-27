@@ -440,7 +440,7 @@ public static class DeploymentService
         }
 
         var iniDest = Path.Combine(game.RenderDir, ModSource.IniName);
-        var iniText = IniTemplate.Render(source.IniText, game.Profile);
+        var iniText = IniTemplate.Render(source.IniText, game.Profile, source.Supports041);
         var restoreFolder = Path.Combine(AppPaths.RestoreRoot, game.Id, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         var backups = new List<BackupItem>();
         var runtimeWritten = new List<DeployedFile>();
@@ -617,8 +617,9 @@ public static class DeploymentService
             {
                 r.Note(Loc.T("Detail.SettingSummary040", game.Profile.Engine,
                     Loc.T(game.Profile.Enabled ? "Deploy.On" : "Deploy.Off"), game.Profile.OptimizedTier,
-                    game.Profile.Preset, game.Profile.UsesXeSS ? 2 : game.Profile.MaxGeneratedFrames + 1,
-                    Loc.T(game.Profile.SuperResolution ? "Deploy.On" : "Deploy.Off"), game.Profile.LogLevel));
+                    source.Supports041 && game.Profile.Preset == "Auto" ? "A" : game.Profile.Preset,
+                    game.Profile.UsesXeSS ? (source.Supports041 ? game.Profile.XeSSMaxGeneratedFrames + 1 : 2) : game.Profile.MaxGeneratedFrames + 1,
+                    game.Profile.SuperResolutionMode, game.Profile.LogLevel));
             }
             else
             {
@@ -1081,6 +1082,8 @@ public static class DeploymentService
     {
         var dir = Path.Combine(renderDir, ModSource.LogDirName, "logs");
         if (!Directory.Exists(dir)) return null;
+        var unifiedLog = Path.Combine(dir, "dlssg_sm86.log");
+        if (File.Exists(unifiedLog)) return unifiedLog;
         return new DirectoryInfo(dir).GetFiles("*.jsonl")
             .OrderByDescending(f => f.LastWriteTime)
             .Select(f => f.FullName)

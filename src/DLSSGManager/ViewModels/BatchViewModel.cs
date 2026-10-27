@@ -76,6 +76,10 @@ public sealed partial class BatchViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(RetryFailedCommand))]
     private bool _hasFailures;
 
+    public bool IsRunning { get; private set; }
+    public int SelectedCount { get; private set; }
+    public int CompletedCount { get; private set; }
+
     public BatchViewModel(IBatchHost host, AppData data, Func<IEnumerable<GameEntry>> visibleGames)
     {
         _host = host;
@@ -88,8 +92,9 @@ public sealed partial class BatchViewModel : ObservableObject
     {
         var visible = _visibleGames().ToHashSet();
         var selected = visible.Count(g => g.BatchSelected);
+        SelectedCount = _data.Games.Count(g => g.BatchSelected);
 
-        SelectionText = Loc.T("Manage.SelectedCount", selected, _data.Games.Count(g => g.BatchSelected && !visible.Contains(g)));
+        SelectionText = Loc.T("Manage.SelectedCount", selected, SelectedCount - selected);
         DeployText = Loc.T("Manage.DeploySelected", selected);
         RestoreText = Loc.T("Manage.RestoreSelected", selected);
     }

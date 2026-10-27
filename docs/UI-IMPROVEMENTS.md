@@ -1,6 +1,6 @@
 # 开发与 UI 落地清单
 
-2026-09-30，纳入 v1.10.0。发行说明见 [RELEASE-NOTES.md](RELEASE-NOTES.md)。
+## v1.10.0（2026-09-30）
 
 | 项目 | 已实现行为 |
 |---|---|
@@ -12,14 +12,36 @@
 | 工具区 | 导入代理、显卡名称、提权、数据目录收进可展开工具区 |
 | 常用与高级设置 | 常用配置直接可见；代理、预设、日志级别折叠；旧 INI 控件仍按 schema 显示 |
 | 日志 | 默认折叠，保留最新结果摘要，下载进度优先显示 |
-| 游戏兼容提示 | 荒野 / 绝区零 / 异环自动建议或手动选择，检查相关文件是否存在，不改写配置 |
 | 搜索与筛选 | 名称搜索与全部 / 已部署 / 需处理组合；无结果与空库分别提示 |
 | 构建选择 | 310.9 与 310.1 分目录下载；不兼容设置提示并拒绝部署，不自动改值 |
 | 更新选择 | 本地和游戏已部署版本分别显示；下载不覆盖游戏；可勾选有更新的游戏 |
 | 批量操作 | 仅处理可见且勾选项；提示隐藏勾选数量；逐项结果；只重试失败项 |
+
+## v1.12.0（2026-10-16）
+
+| 项目 | 已实现行为 |
+|---|---|
+| 下载源选择对话框 | 替代主窗口嵌入式面板；支持完整包 / 基础包选择（含超分内核 vs 仅帧生成）；构建目录选择（310.9 / 310.1） |
+| 并发测速 | 7 个源（GitHub Release + 6 个 SourceForge 镜像）并发 GET 前 16KB，按延迟与吞吐量排序；HEAD 测不出真实速度故用 GET |
+| 测速结果显示 | 源列表显示实时速度（fastest / XX KB/s / unavailable）；Retest 按钮重新测速 |
+| 下载控制 | Pause（暂停全部下载，可恢复）、Skip（跳过当前源，尝试下一个）、Stop（取消整个下载） |
+| 断点续传 | HTTP Range 请求 + 停顿检测（5 秒无进度自动重试当前块）；RangeNotSatisfiable 降级为全量重下 |
+| 离线导入 | 拖拽区 + Browse 按钮支持本地 .zip 文件导入；自动识别完整包 / 基础包并验证签名；展平单目录包装层 |
+| 安全解压 | 条目数上限 500、单条目 200MB、总大小 300MB，防止 zip 炸弹 |
+| 主题跟随系统 | 新增"跟随系统"选项（读取 `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`）|
+| 主题切换监听 | MainWindow 注册 `WM_SETTINGCHANGE` 消息钩子，监听 "ImmersiveColorSet" 变更并实时应用 |
+| 语言热切换 | 单帧更新所有文本（LocalizedText 延迟渲染 + Choice<T> 属性通知 + LocalizedString DataTemplate）|
+| 无闪烁切换 | 游戏详情不需要重新检查（StatusMessage 存储 key+args 而非固定字符串）；下拉列表不需要重建 |
+| MVVM 拆分 | 引入 CommunityToolkit.Mvvm 8.4.2；三个视图模型（GameManagementViewModel / BatchViewModel / ProtectionViewModel）|
+| 命令绑定 | 批量部署 / 恢复改用 RelayCommand，替代 Click 事件处理器；按钮启用逻辑移入 ViewModel |
+| 接口隔离 | IBatchHost 接口解耦 BatchViewModel 与 MainWindow；显式接口实现避免公开内部方法 |
 
 ## 行为边界
 
 切换构建时同步更新能匹配的自家备用代理，并继续记录恢复信息。自定义备用代理在新构建里没有对应文件时，要求先恢复再部署。保存/关闭保护适用于正常操作与窗口关闭；不提供断电或强制终止时的事务回滚。
 
 安全深度扫描、下载归档容量限制等原有独立待办不属于本次 UI / 管理流程清单。
+
+## 发行说明
+
+详细发行说明见 [RELEASE-NOTES.md](RELEASE-NOTES.md)。
