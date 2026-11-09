@@ -14,6 +14,17 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Helper mode: started elevated by this program for one plan (see ElevatedRunner). No window;
+        // exactly "--elevated <pipe>" is accepted, anything else exits with code 2.
+        if (e.Args.Length > 0 && string.Equals(e.Args[0], Shell.ElevatedSwitch, StringComparison.Ordinal))
+        {
+            var code = e.Args.Length == 2
+                ? Task.Run(() => ElevatedHost.RunAsync(e.Args[1])).GetAwaiter().GetResult()
+                : 2;
+            Shutdown(code);
+            return;
+        }
+
         AppPaths.EnsureCreated();
 
         // --fetch provides a command-line download entry. Return before base.OnStartup so StartupUri

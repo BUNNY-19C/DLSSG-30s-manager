@@ -49,8 +49,12 @@ public abstract record FileOp;
 /// <summary>Copies a file that is not ours into the plan's restore folder before it is replaced.</summary>
 public sealed record BackupOp(string RelativePath) : FileOp;
 
-/// <summary>Copies <paramref name="SourcePath"/> into the game folder through a temporary file.</summary>
-public sealed record WriteFileOp(string RelativePath, string SourcePath, FileRole Role) : FileOp;
+/// <summary>
+/// Copies <paramref name="SourcePath"/> into the game folder through a temporary file. The copy must
+/// have <paramref name="ExpectedSha256"/>: the payload folder is user-writable, so a file swapped after
+/// planning (or between an unelevated plan and its elevated execution) is refused rather than installed.
+/// </summary>
+public sealed record WriteFileOp(string RelativePath, string SourcePath, FileRole Role, string ExpectedSha256 = "") : FileOp;
 
 /// <summary>Writes text (the rendered INI) into the game folder through a temporary file.</summary>
 public sealed record WriteTextOp(string RelativePath, string Content, FileRole Role) : FileOp;
@@ -107,6 +111,9 @@ public sealed record DeployPlan(PlanKind Kind, string GameId, string RenderDir, 
 /// <summary>Result of planning: a plan, or the reason there is none.</summary>
 public sealed record PlanOutcome(DeployPlan? Plan, string? Error)
 {
+    /// <summary>The plan is complete, but this process cannot write into the game folder.</summary>
+    public bool NeedsElevation { get; init; }
+
     /// <summary>Anti-cheat scan made while planning a deploy, so the caller can update the banner.</summary>
     public ProtectionReport? Protection { get; init; }
 

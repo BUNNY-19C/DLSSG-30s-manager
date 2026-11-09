@@ -382,11 +382,13 @@ public partial class MainWindow : Window
         AdminButton.IsEnabled = !Native.IsElevated();
         RefreshCodeText();
 
+        _log.Write(Loc.T("Status.DataDir", AppPaths.Root));
+        ReportLibraryLoad();
+        RecoverInterruptedOperations();
+
         RefreshModSource();
         RefreshAllStatus();
 
-        _log.Write(Loc.T("Status.DataDir", AppPaths.Root));
-        ReportLibraryLoad();
         if (!Native.IsElevated())
             _log.Write(Loc.T("Status.NoPermissionHint"));
 
@@ -990,6 +992,40 @@ public partial class MainWindow : Window
         var text = Loc.T(key, args);
         _log.Result(false, text);
         MessageBox.Show(this, text, Loc.T("App.Name"), MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    /// <summary>
+    /// Undoes deploys and finishes restores that a crash or power loss cut short, from their journals.
+    /// Runs before the first status refresh so the list shows the recovered state. Skipped in a
+    /// read-only session: the corrected records could not be saved.
+    /// </summary>
+    private void RecoverInterruptedOperations()
+    {
+        if (_data.SaveBlockedReason is not null) return;
+
+        IReadOnlyList<RecoveryReport> reports;
+        try
+        {
+            reports = PlanRecovery.RecoverAll();
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("恢复中断操作失败: " + ex);
+            return;
+        }
+        if (reports.Count == 0) return;
+
+        foreach (var report in reports)
+        {
+            _log.Details(report.Lines);
+            var game = _data.Games.FirstOrDefault(g => g.Id == report.GameId);
+            if (game is not null) game.Deployment = report.Record;
+        }
+
+        SaveLibrary();
+        var summary = Loc.T("Recovery.Summary", reports.Count);
+        _log.Result(reports.All(r => !r.Failed), summary);
+        MessageBox.Show(this, summary, Loc.T("App.Name"), MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private async void RefreshAllStatus()

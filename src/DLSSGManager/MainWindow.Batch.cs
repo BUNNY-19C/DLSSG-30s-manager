@@ -24,6 +24,13 @@ public partial class MainWindow : IBatchHost
         MessageBox.Show(this, ProtectionViewModel.OverridePrompt(game), Loc.T("Anti.OverrideTitle"),
             MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
 
+    bool IBatchHost.ConfirmElevation() => ConfirmElevation();
+
+    /// <summary>Asks before a single operation runs through the elevated helper.</summary>
+    private bool ConfirmElevation() =>
+        MessageBox.Show(this, Loc.T("Elevated.Prompt"), Loc.T("App.Name"),
+            MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes) == MessageBoxResult.Yes;
+
     ModSource IBatchHost.SourceFor(GameEntry game) => CurrentSource(game);
 
     bool IBatchHost.RemoveLogs => RemoveLogsCheck.IsChecked == true;

@@ -79,6 +79,10 @@ public static class PlanExecutor
                         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                         tmp = dest + TempSuffix;
                         File.Copy(w.SourcePath, tmp, overwrite: true);
+                        // Check the copy, not the source: what lands in the game folder is what must match.
+                        if (w.ExpectedSha256.Length > 0 &&
+                            !DeploymentService.Sha256(tmp).Equals(w.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException(Loc.T("Deploy.SourceChanged", w.RelativePath));
                         File.Move(tmp, dest, overwrite: true);
                         tmp = null;
                         DeploymentService.Unblock(dest);

@@ -22,6 +22,9 @@
 # CodeGraph 代码索引（本机生成，不入库）
 .codegraph/
 
+# 测试运行产物（hang dump 等）
+TestResults/
+
 # 临时文件
 /_dl/
 *.tmp

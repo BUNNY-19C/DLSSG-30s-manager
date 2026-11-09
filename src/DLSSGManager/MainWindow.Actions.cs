@@ -64,8 +64,8 @@ public partial class MainWindow
             }
 
             var source = CurrentSource(game);
-            var result = await Task.Run(() => DeploymentService.Deploy(game, source,
-                allowProtected: protection.HasKernelAntiCheat));
+            var result = await DeploymentService.DeployAsync(game, source,
+                allowProtected: protection.HasKernelAntiCheat, ConfirmElevation);
 
             _log.Details(result.Lines);
             _log.Result(result.Ok, result.Message);
@@ -126,7 +126,7 @@ public partial class MainWindow
         try
         {
             var removeLogs = RemoveLogsCheck.IsChecked == true;
-            var result = await Task.Run(() => DeploymentService.Restore(game, removeLogs));
+            var result = await DeploymentService.RestoreAsync(game, removeLogs, ConfirmElevation);
 
             _log.Details(result.Lines);
             _log.Result(result.Ok, result.Message);

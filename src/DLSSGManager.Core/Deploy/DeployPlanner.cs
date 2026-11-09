@@ -47,12 +47,14 @@ public static class DeployPlanner
             return PlanOutcome.Failure(Loc.T("Deploy.BlockedKernel", protection.Summary, protection.Evidence))
                 with { Protection = protection };
 
-        if (!DeploymentService.IsWritable(game.RenderDir))
-            return PlanOutcome.Failure(Loc.T("Deploy.NoPermission")) with { Protection = protection };
+        // Planning only reads, so a folder this process cannot write still gets a full plan; the caller
+        // decides whether to run it through the elevated helper.
+        var writable = DeploymentService.IsWritable(game.RenderDir);
 
         try
         {
-            return BuildDeploy(game, source) with { Protection = protection };
+            var outcome = BuildDeploy(game, source) with { Protection = protection };
+            return outcome.Plan is not null && !writable ? outcome with { NeedsElevation = true } : outcome;
         }
         catch (Exception ex)
         {
@@ -104,7 +106,7 @@ public static class DeployPlanner
                 ops.Add(new BackupOp(name));
                 backups++;
             }
-            ops.Add(new WriteFileOp(name, Path.Combine(source.Root, name), FileRole.Runtime));
+            ops.Add(Write(name, Path.Combine(source.Root, name), FileRole.Runtime));
         }
 
         // Changing back to a legacy source removes only runtime files the previous record owns.
@@ -129,7 +131,7 @@ public static class DeployPlanner
             }
 
             ops.Add(File.Exists(source.DllPath(name))
-                ? new WriteFileOp(name, source.DllPath(name), FileRole.Standby)
+                ? Write(name, source.DllPath(name), FileRole.Standby)
                 : new RecordExistingOp(name, FileRole.Standby));
             ops.Add(new NoteOp(NoteSpec.Of("Deploy.StandbyKept", name)));
         }
@@ -145,7 +147,7 @@ public static class DeployPlanner
             backups++;
         }
 
-        ops.Add(new WriteFileOp(proxy, source.DllPath(proxy), FileRole.Proxy));
+        ops.Add(Write(proxy, source.DllPath(proxy), FileRole.Proxy));
         ops.Add(new WriteTextOp(ModSource.IniName, iniText, FileRole.Ini));
 
         ops.Add(new NoteOp(NoteSpec.Of("Deploy.Done", proxy, ModSource.IniName, root)));
@@ -198,12 +200,12 @@ public static class DeployPlanner
         if (running.Count > 0)
             return PlanOutcome.Failure(Loc.T("Restore.GameRunning", Loc.Join(running.Select(p => p.ProcessName))));
 
-        if (!DeploymentService.IsWritable(game.RenderDir))
-            return PlanOutcome.Failure(Loc.T("Deploy.NoPermission"));
-
         try
         {
-            return PlanOutcome.Success(BuildRestore(game, removeLogs));
+            return PlanOutcome.Success(BuildRestore(game, removeLogs)) with
+            {
+                NeedsElevation = !DeploymentService.IsWritable(game.RenderDir),
+            };
         }
         catch (Exception ex)
         {
@@ -283,6 +285,10 @@ public static class DeployPlanner
 
         return new DeployPlan(PlanKind.Restore, game.Id, root, ops);
     }
+
+    /// <summary>A write step pinned to the payload file's current bytes.</summary>
+    private static WriteFileOp Write(string relative, string source, FileRole role) =>
+        new(relative, source, role, DeploymentService.Sha256(source));
 
     private static void AddOwnedDeletion(List<FileOp> ops, string root, string name, string? recordedHash)
     {

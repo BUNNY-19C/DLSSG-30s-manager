@@ -24,6 +24,9 @@ public interface IBatchHost
     /// <summary>Asks whether to deploy to a game whose kernel-mode anti-cheat was just detected.</summary>
     bool ConfirmProtectedDeploy(GameEntry game);
 
+    /// <summary>Asks whether to run one operation through the elevated helper.</summary>
+    bool ConfirmElevation();
+
     ModSource SourceFor(GameEntry game);
 
     bool RemoveLogs { get; }
@@ -174,8 +177,9 @@ public sealed partial class BatchViewModel : ObservableObject
 
                     var source = _host.SourceFor(game);
                     var removeLogs = _host.RemoveLogs;
-                    result = await Task.Run(() => restore ? DeploymentService.Restore(game, removeLogs)
-                        : DeploymentService.Deploy(game, source, allowProtected));
+                    result = restore
+                        ? await DeploymentService.RestoreAsync(game, removeLogs, _host.ConfirmElevation)
+                        : await DeploymentService.DeployAsync(game, source, allowProtected, _host.ConfirmElevation);
                 }
                 catch (Exception ex)
                 {

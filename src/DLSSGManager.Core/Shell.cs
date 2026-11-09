@@ -213,6 +213,78 @@ public static class Shell
         return Execute("open", path!, Path.GetDirectoryName(path!));
     }
 
+    private const uint SEE_MASK_NOCLOSEPROCESS = 0x00000040;
+    private const int SW_HIDE = 0;
+
+    /// <summary>Prefix of every helper pipe name; the rest is 32 hex digits.</summary>
+    public const string HelperPipePrefix = "DLSSGManager.Elevated.";
+
+    /// <summary>True for exactly the pipe names <see cref="NewHelperPipeName"/> produces.</summary>
+    public static bool IsHelperPipeName(string? name) =>
+        name is not null &&
+        name.Length == HelperPipePrefix.Length + 32 &&
+        name.StartsWith(HelperPipePrefix, StringComparison.Ordinal) &&
+        name.AsSpan(HelperPipePrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0;
+
+    public static string NewHelperPipeName() => HelperPipePrefix + Guid.NewGuid().ToString("N");
+
+    /// <summary>Command-line switch that makes the manager run as the elevated helper.</summary>
+    public const string ElevatedSwitch = "--elevated";
+
+    /// <summary>
+    /// Starts this program again through the UAC prompt in helper mode, passing only the pipe name.
+    ///
+    /// The executable is this process's own image, and the parameters are the fixed
+    /// <see cref="ElevatedSwitch"/> plus a name produced by <see cref="NewHelperPipeName"/> — a fixed
+    /// prefix and hex digits — so there is nothing a command-line parser could split or interpret.
+    /// Returns the process, or null when the user declined the prompt.
+    /// </summary>
+    public static System.Diagnostics.Process? StartElevatedHelper(string pipeName)
+    {
+        if (!IsHelperPipeName(pipeName)) throw new ArgumentException("Invalid helper pipe name.", nameof(pipeName));
+
+        var exe = Environment.ProcessPath;
+        if (!PathGuard.IsSafeExecutable(exe, out var reason))
+        {
+            AppPaths.Log($"无法启动提权助手：{reason}");
+            return null;
+        }
+
+        var info = new ShellExecuteInfo
+        {
+            cbSize = Marshal.SizeOf<ShellExecuteInfo>(),
+            fMask = SEE_MASK_FLAG_NO_UI | SEE_MASK_NOCLOSEPROCESS,
+            lpVerb = "runas",
+            lpFile = exe!,
+            lpParameters = ElevatedSwitch + " " + pipeName,
+            lpDirectory = AppContext.BaseDirectory,
+            nShow = SW_HIDE,
+        };
+
+        if (!ShellExecuteExW(ref info))
+        {
+            var error = Marshal.GetLastWin32Error();
+            AppPaths.Log(error == ERROR_CANCELLED ? "用户取消了提权" : $"启动提权助手失败（错误 {error}）");
+            return null;
+        }
+
+        if (info.hProcess == IntPtr.Zero) return null;
+        try
+        {
+            return System.Diagnostics.Process.GetProcessById(GetProcessId(info.hProcess));
+        }
+        finally
+        {
+            CloseHandle(info.hProcess);
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern int GetProcessId(IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
+
     /// <summary>
     /// Restarts the manager through the UAC prompt so a write-protected game folder can be written.
     /// The target is always this process's own image, never anything user-supplied.
