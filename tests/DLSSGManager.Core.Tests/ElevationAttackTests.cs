@@ -251,7 +251,7 @@ public class RecoveryFailureTests
         public void BackedUp(DeployPlan plan, BackupItem backup) => inner.BackedUp(plan, backup);
         public void Deleting(DeployPlan plan, string relativePath) => inner.Deleting(plan, relativePath);
         public void Writing(DeployPlan plan, string relativePath) => inner.Writing(plan, relativePath);
-        public void Complete(DeployPlan plan) { }
+        public void Finish(DeployPlan plan, ExecutionResult result) { }
     }
 }
 

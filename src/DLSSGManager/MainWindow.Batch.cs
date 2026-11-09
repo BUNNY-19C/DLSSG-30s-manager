@@ -13,9 +13,9 @@ public partial class MainWindow : IBatchHost
 
     void IBatchHost.SetBusy(bool busy) => _busy = busy;
 
-    bool IBatchHost.EnsureSaved() => Management.SaveFailure is null || SaveLibrary();
+    LibraryStore.Writer? IBatchHost.BeginWrite() => BeginLibraryWrite(saveEdits: true);
 
-    bool IBatchHost.SaveLibrary() => SaveLibrary();
+    bool IBatchHost.SaveLibrary(LibraryStore.Writer writer) => SaveLibrary(writer);
 
     bool IBatchHost.Confirm(string title, string body) =>
         MessageBox.Show(this, body, title, MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;

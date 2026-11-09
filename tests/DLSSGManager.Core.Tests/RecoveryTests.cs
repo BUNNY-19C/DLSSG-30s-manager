@@ -23,7 +23,7 @@ public class RecoveryTests
         }
 
         // A crashed process never gets to clean up its journal.
-        public void Complete(DeployPlan plan) { }
+        public void Finish(DeployPlan plan, ExecutionResult result) { }
     }
 
     private sealed class SimulatedCrash : Exception;
@@ -60,7 +60,7 @@ public class RecoveryTests
         Assert.False(report.Failed);
         Assert.Null(report.Record);
         Assert.Equal(before, f.Snapshot());
-        Assert.Empty(FilePlanJournal.Pending(journal.Path));
+        Assert.NotNull(Assert.Single(FilePlanJournal.Pending(journal.Path)).Entry!.Completion);
     }
 
     [Fact]
@@ -152,19 +152,61 @@ public class RecoveryTests
             if (++_deletes == crashOnDelete) throw new SimulatedCrash();
         }
 
-        public void Complete(DeployPlan plan) { }
+        public void Finish(DeployPlan plan, ExecutionResult result) { }
     }
 
     [Fact]
-    public void Completed_runs_leave_no_journal()
+    public void Completed_runs_leave_no_journal_after_saving()
     {
         using var f = new DeploymentFixture();
         using var journal = new TempDir();
 
-        Assert.True(DeploymentService.Deploy(f.Game, f.Source, true, new FilePlanJournal(f.Game.Deployment, journal.Path)).Ok);
-        Assert.True(DeploymentService.Restore(f.Game, false, new FilePlanJournal(f.Game.Deployment, journal.Path)).Ok);
+        var data = new AppData();
+        data.Games.Add(f.Game);
+        using var writer = LibraryStore.BeginWrite(data, journal.File("library.json"));
+        Assert.True(DeploymentService.Deploy(f.Game, f.Source, true, new FilePlanJournal(null, writer.JournalDirectory)).Ok);
+        Assert.Single(FilePlanJournal.Pending(writer.JournalDirectory));
+        Assert.True(writer.Save().Ok);
+        Assert.Empty(FilePlanJournal.Pending(writer.JournalDirectory));
+        Assert.True(DeploymentService.Restore(f.Game, false, new FilePlanJournal(f.Game.Deployment, writer.JournalDirectory)).Ok);
+        Assert.Single(FilePlanJournal.Pending(writer.JournalDirectory));
+        Assert.True(writer.Save().Ok);
+        Assert.Empty(FilePlanJournal.Pending(writer.JournalDirectory));
+    }
 
-        Assert.Empty(FilePlanJournal.Pending(journal.Path));
+    [Fact]
+    public void Failed_library_save_keeps_the_completed_record_recoverable()
+    {
+        using var f = new DeploymentFixture();
+        using var dir = new TempDir();
+        f.WriteGameFile(ModSource.IniName, "; original settings");
+        var file = dir.File("library.json");
+        var data = new AppData();
+        data.Games.Add(f.Game);
+        Assert.True(LibraryStore.Save(data, file).Ok);
+
+        using (var writer = LibraryStore.BeginWrite(data, file))
+        {
+            Assert.True(DeploymentService.Deploy(f.Game, f.Source, true, new FilePlanJournal(null, writer.JournalDirectory)).Ok);
+            using var locked = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            Assert.False(writer.Save().Ok);
+            Assert.Single(FilePlanJournal.Pending(writer.JournalDirectory));
+        }
+
+        var deployed = f.Snapshot();
+        var reopened = LibraryStore.Load(file);
+        var game = Assert.Single(reopened.Games);
+        Assert.Null(game.Deployment);
+        using var retry = LibraryStore.BeginWrite(reopened, file);
+        var report = Assert.Single(PlanRecovery.RecoverAll(retry.JournalDirectory));
+        Assert.False(report.RolledBack);
+        Assert.Single(report.Record!.Backups);
+        Assert.Equal(deployed, f.Snapshot());
+        Assert.Single(FilePlanJournal.Pending(retry.JournalDirectory));
+        game.Deployment = report.Record;
+        Assert.True(retry.Save().Ok);
+        Assert.Empty(FilePlanJournal.Pending(retry.JournalDirectory));
+        Assert.Single(Assert.Single(LibraryStore.Load(file).Games).Deployment!.Backups);
     }
 
     [Fact]

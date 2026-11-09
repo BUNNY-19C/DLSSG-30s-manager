@@ -14,10 +14,10 @@ public interface IBatchHost
 
     void SetBusy(bool busy);
 
-    /// <summary>Retries a previously failed save; false when the library still cannot be written.</summary>
-    bool EnsureSaved();
+    /// <summary>Locks the current library revision for the batch.</summary>
+    LibraryStore.Writer? BeginWrite();
 
-    bool SaveLibrary();
+    bool SaveLibrary(LibraryStore.Writer writer);
 
     bool Confirm(string title, string body);
 
@@ -146,11 +146,12 @@ public sealed partial class BatchViewModel : ObservableObject
     private async Task RunAsync(List<GameEntry> targets, bool restore)
     {
         if (_host.IsWorkRunning || targets.Count == 0) return;
-        if (!_host.EnsureSaved()) return;
 
         var body = Loc.T(restore ? "Batch.RestoreConfirm" : "Batch.DeployConfirm", targets.Count,
             string.Join("\n", targets.Select(t => "· " + t.Name)));
         if (!_host.Confirm(Loc.T(restore ? "Batch.RestoreTitle" : "Batch.DeployTitle"), body)) return;
+        using var writer = _host.BeginWrite();
+        if (writer is null) return;
 
         _host.SetBusy(true);
         _failed.Clear();
@@ -188,7 +189,7 @@ public sealed partial class BatchViewModel : ObservableObject
 
                 // Each game's record is written before the next one starts: a batch that dies part-way
                 // must not leave deployed files the library does not know about.
-                var saved = _host.SaveLibrary();
+                var saved = _host.SaveLibrary(writer);
                 if (!saved)
                 {
                     result.Ok = false;
@@ -207,7 +208,7 @@ public sealed partial class BatchViewModel : ObservableObject
                 try
                 {
                     _host.ApplyCheck(game, await Task.Run(() => DeploymentService.Evaluate(game)));
-                    saved = _host.SaveLibrary() && saved;
+                    if (saved) saved = _host.SaveLibrary(writer);
                 }
                 catch (Exception ex)
                 {

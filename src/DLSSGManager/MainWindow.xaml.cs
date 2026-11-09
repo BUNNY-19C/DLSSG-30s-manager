@@ -1001,12 +1001,14 @@ public partial class MainWindow : Window
     /// </summary>
     private void RecoverInterruptedOperations()
     {
-        if (_data.SaveBlockedReason is not null) return;
+        if (_data.SaveBlockedReason is not null || !Directory.Exists(FilePlanJournal.DefaultDirectory)) return;
+        using var writer = BeginLibraryWrite();
+        if (writer is null) return;
 
         IReadOnlyList<RecoveryReport> reports;
         try
         {
-            reports = PlanRecovery.RecoverAll();
+            reports = PlanRecovery.RecoverAll(writer.JournalDirectory);
         }
         catch (Exception ex)
         {
@@ -1018,11 +1020,11 @@ public partial class MainWindow : Window
         foreach (var report in reports)
         {
             _log.Details(report.Lines);
-            var game = _data.Games.FirstOrDefault(g => g.Id == report.GameId);
+            var game = _data.Games.FirstOrDefault(report.Matches);
             if (game is not null) game.Deployment = report.Record;
         }
 
-        SaveLibrary();
+        if (!SaveLibrary(writer)) return;
         var summary = Loc.T("Recovery.Summary", reports.Count);
         _log.Result(reports.All(r => !r.Failed), summary);
         MessageBox.Show(this, summary, Loc.T("App.Name"), MessageBoxButton.OK, MessageBoxImage.Information);

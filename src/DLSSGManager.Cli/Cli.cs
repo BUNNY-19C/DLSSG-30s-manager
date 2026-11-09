@@ -54,6 +54,11 @@ public sealed partial class Cli(TextWriter output, TextWriter error)
             error.WriteLine(ex.Message);
             return ExitCode.Usage;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error.WriteLine(ex.Message);
+            return ExitCode.Failed;
+        }
     }
 
     private int UnknownCommand(string name)

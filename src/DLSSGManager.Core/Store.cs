@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -103,6 +104,9 @@ public sealed record LibraryLoadResult(AppData Data, LibraryLoadOutcome Outcome,
 
 public static class LibraryStore
 {
+    private sealed record Snapshot(string Path, string? Contents);
+    private static readonly ConditionalWeakTable<AppData, Snapshot> Snapshots = new();
+
     /// <summary>Suffix of the previous good copy, rotated on every successful save.</summary>
     public const string BackupSuffix = ".bak";
 
@@ -121,25 +125,27 @@ public static class LibraryStore
     /// </summary>
     public static LibraryLoadResult LoadWithStatus(string? path = null)
     {
-        var file = path ?? AppPaths.LibraryFile;
-        if (!File.Exists(file))
-        {
-            // A crash between writing the backup and replacing the file can leave only the backup.
-            if (TryRead(file + BackupSuffix, out var orphan, out _) && orphan is not null)
-                return new LibraryLoadResult(orphan, LibraryLoadOutcome.RecoveredFromBackup);
-            return new LibraryLoadResult(new AppData(), LibraryLoadOutcome.Created);
-        }
+        var file = Path.GetFullPath(path ?? AppPaths.LibraryFile);
+        if (TryRead(file, out var data, out var error, out var contents))
+            return Track(new LibraryLoadResult(data!, LibraryLoadOutcome.Loaded), file, contents);
 
-        if (TryRead(file, out var data, out var error) && data is not null)
-            return new LibraryLoadResult(data, LibraryLoadOutcome.Loaded);
+        if (error == "missing")
+            return Track(LoadBackup(file), file, null);
 
         AppPaths.Log("读取库文件失败: " + error);
 
         var aside = $"{file}.corrupt-{DateTime.Now:yyyyMMdd_HHmmss}";
         try
         {
+            using var repairLock = LockFile(file);
+            // Another process may have repaired or replaced the file since the initial read.
+            if (TryRead(file, out data, out error, out contents))
+                return Track(new LibraryLoadResult(data!, LibraryLoadOutcome.Loaded), file, contents);
+            if (error == "missing")
+                return Track(LoadBackup(file), file, null);
             File.Move(file, aside);
             AppPaths.Log("已将无法读取的库文件另存为: " + aside);
+            return Track(LoadBackup(file, error, aside), file, null);
         }
         catch (Exception ex)
         {
@@ -147,27 +153,46 @@ public static class LibraryStore
             var locked = new AppData { SaveBlockedReason = error ?? ex.Message };
             return new LibraryLoadResult(locked, LibraryLoadOutcome.ReadOnly, error);
         }
-
-        if (TryRead(file + BackupSuffix, out var backup, out _) && backup is not null)
-            return new LibraryLoadResult(backup, LibraryLoadOutcome.RecoveredFromBackup, error, aside);
-
-        return new LibraryLoadResult(new AppData(), LibraryLoadOutcome.Quarantined, error, aside);
     }
 
-    private static bool TryRead(string file, out AppData? data, out string? error)
+    private static LibraryLoadResult LoadBackup(string file, string? error = null, string? aside = null) =>
+        TryRead(file + BackupSuffix, out var backup, out _, out _)
+            ? new(backup!, LibraryLoadOutcome.RecoveredFromBackup, error, aside)
+            : new(new AppData(), aside is null ? LibraryLoadOutcome.Created : LibraryLoadOutcome.Quarantined, error, aside);
+
+    private static LibraryLoadResult Track(LibraryLoadResult result, string file, string? contents)
+    {
+        Snapshots.AddOrUpdate(result.Data, new Snapshot(file, contents));
+        return result;
+    }
+
+    private static string? ReadContents(string file)
+    {
+        try
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            return reader.ReadToEnd();
+        }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
+    }
+
+    private static bool TryRead(string file, out AppData? data, out string? error, out string? contents)
     {
         data = null;
         error = null;
+        contents = null;
         try
         {
-            if (!File.Exists(file))
+            contents = ReadContents(file);
+            if (contents is null)
             {
                 error = "missing";
                 return false;
             }
 
-            var json = File.ReadAllText(file, Encoding.UTF8);
-            data = System.Text.Json.JsonSerializer.Deserialize<AppData>(json, JsonOptions);
+            data = System.Text.Json.JsonSerializer.Deserialize<AppData>(contents, JsonOptions);
             if (data is null)
             {
                 error = "empty document";
@@ -197,35 +222,104 @@ public static class LibraryStore
     /// </summary>
     public static OpResult Save(AppData data, string? path = null)
     {
-        var result = new OpResult();
-        if (data.SaveBlockedReason is not null)
-        {
-            result.Fail(Loc.T("Library.SaveBlocked", data.SaveBlockedReason));
-            return result;
-        }
-
-        var file = path ?? AppPaths.LibraryFile;
         try
         {
-            AppPaths.EnsureCreated();
-            var dir = Path.GetDirectoryName(file);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            var json = Serialize(data);
-            var tmp = file + ".tmp";
-            File.WriteAllText(tmp, json, new UTF8Encoding(false));
-
-            if (File.Exists(file))
-                File.Replace(tmp, file, file + BackupSuffix, ignoreMetadataErrors: true);
-            else
-                File.Move(tmp, file);
+            using var writer = BeginWrite(data, path);
+            return writer.Save();
         }
         catch (Exception ex)
         {
-            AppPaths.Log("保存库文件失败: " + ex.Message);
-            result.Fail(ex.Message);
+            return SaveError(ex);
         }
+    }
+
+    /// <summary>Excludes other manager writers, including recovery, until the operation has saved.</summary>
+    public static Writer BeginWrite(AppData data, string? path = null)
+    {
+        if (data.SaveBlockedReason is not null)
+            throw new IOException(Loc.T("Library.SaveBlocked", data.SaveBlockedReason));
+
+        var file = Path.GetFullPath(path ?? AppPaths.LibraryFile);
+        var handle = LockFile(file);
+        try
+        {
+            CheckSnapshot(data, file);
+            return new Writer(data, file, handle);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    private static FileStream LockFile(string file)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        try { return new FileStream(file + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+        catch (IOException ex) when ((ex.HResult & 0xffff) is 32 or 33)
+        {
+            throw new IOException(Loc.T("Library.Busy"), ex);
+        }
+    }
+
+    private static string? CheckSnapshot(AppData data, string file)
+    {
+        var contents = ReadContents(file);
+        var expected = Snapshots.TryGetValue(data, out var snapshot) &&
+                       string.Equals(snapshot.Path, file, StringComparison.OrdinalIgnoreCase)
+            ? snapshot.Contents : null;
+        if (!string.Equals(contents, expected, StringComparison.Ordinal))
+            throw new IOException(Loc.T("Library.Conflict"));
+        return contents;
+    }
+
+    private static OpResult SaveError(Exception ex)
+    {
+        var result = new OpResult();
+        result.Fail(ex.Message);
         return result;
+    }
+
+    public sealed class Writer : IDisposable
+    {
+        private readonly AppData _data;
+        private readonly string _file;
+        private readonly FileStream _handle;
+
+        internal Writer(AppData data, string file, FileStream handle) => (_data, _file, _handle) = (data, file, handle);
+
+        public string JournalDirectory => Path.Combine(Path.GetDirectoryName(_file)!, "journal");
+
+        public OpResult Save()
+        {
+            try
+            {
+                ObjectDisposedException.ThrowIf(_handle.SafeFileHandle.IsClosed, this);
+                var previous = CheckSnapshot(_data, _file);
+                var json = Serialize(_data);
+                if (json != previous)
+                {
+                    var tmp = _file + ".tmp";
+                    using (var stream = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        stream.Write(Encoding.UTF8.GetBytes(json));
+                        stream.Flush(flushToDisk: true);
+                    }
+                    if (previous is null) File.Move(tmp, _file);
+                    else File.Replace(tmp, _file, _file + BackupSuffix, ignoreMetadataErrors: true);
+                    Snapshots.AddOrUpdate(_data, new Snapshot(_file, json));
+                }
+                FilePlanJournal.AcknowledgeSaved(_data, JournalDirectory);
+                return new OpResult();
+            }
+            catch (Exception ex)
+            {
+                return SaveError(ex);
+            }
+        }
+
+        public void Dispose() => _handle.Dispose();
     }
 
     private static void Normalize(GameEntry g)

@@ -71,7 +71,9 @@ public class LibraryStoreTests
         var file = dir.File("library.json");
 
         Assert.True(LibraryStore.Save(LibraryWithDeployment("Alpha"), file).Ok);
-        Assert.True(LibraryStore.Save(LibraryWithDeployment("Beta"), file).Ok);   // Alpha rotates into .bak
+        var latest = LibraryStore.Load(file);
+        Assert.Single(latest.Games).Name = "Beta";
+        Assert.True(LibraryStore.Save(latest, file).Ok);   // Alpha rotates into .bak
         File.WriteAllText(file, "not json");
 
         var loaded = LibraryStore.LoadWithStatus(file);
@@ -95,6 +97,38 @@ public class LibraryStoreTests
         Assert.Equal(LibraryLoadOutcome.ReadOnly, loaded.Outcome);
         Assert.False(LibraryStore.Save(loaded.Data, file).Ok);
         Assert.Equal("not json", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void Stale_snapshot_cannot_overwrite_a_newer_save()
+    {
+        using var dir = new TempDir();
+        var file = dir.File("library.json");
+        Assert.True(LibraryStore.Save(LibraryWithDeployment("Alpha"), file).Ok);
+        var stale = LibraryStore.Load(file);
+        var current = LibraryStore.Load(file);
+        Assert.Single(current.Games).Name = "From CLI";
+        Assert.True(LibraryStore.Save(current, file).Ok);
+        Assert.Single(stale.Games).Name = "From GUI";
+        Assert.False(LibraryStore.Save(stale, file).Ok);
+        Assert.Equal("From CLI", Assert.Single(LibraryStore.Load(file).Games).Name);
+        Assert.Equal("Alpha", Assert.Single(LibraryStore.Load(file + LibraryStore.BackupSuffix).Games).Name);
+    }
+
+    [Fact]
+    public void Active_operation_excludes_other_writers_until_it_saves()
+    {
+        using var dir = new TempDir();
+        var file = dir.File("library.json");
+        var first = LibraryStore.Load(file);
+        var second = LibraryStore.Load(file);
+        using (var writer = LibraryStore.BeginWrite(first, file))
+        {
+            Assert.False(LibraryStore.Save(second, file).Ok);
+            Assert.True(writer.Save().Ok);
+        }
+        Assert.False(LibraryStore.Save(second, file).Ok);
+        Assert.True(LibraryStore.Save(LibraryStore.Load(file), file).Ok);
     }
 
     [Fact]

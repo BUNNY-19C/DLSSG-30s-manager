@@ -28,9 +28,11 @@ public static class PlanExecutor
     public static ExecutionResult Execute(DeployPlan plan, DeploymentInfo? previous, IPlanJournal? journal = null)
     {
         journal ??= NullPlanJournal.Instance;
-        return plan.Kind == PlanKind.Deploy
+        var result = plan.Kind == PlanKind.Deploy
             ? RunDeploy(plan, previous, journal)
             : RunRestore(plan, journal);
+        journal.Finish(plan, result);
+        return result;
     }
 
     private static ExecutionResult RunDeploy(DeployPlan plan, DeploymentInfo? prev, IPlanJournal journal)
@@ -117,7 +119,6 @@ public static class PlanExecutor
             }
 
             var record = BuildRecord(plan, prev, backups, written);
-            journal.Complete(plan);
             r.Message = Loc.T("Deploy.Success", plan.ProxyName);
             return new ExecutionResult(r, true, record);
         }
@@ -136,7 +137,6 @@ public static class PlanExecutor
             // displaced originals so a retry or a restore can still account for every write.
             if (written.Count == 0 && backups.Count == 0)
             {
-                journal.Complete(plan);
                 return new ExecutionResult(r, false, prev);
             }
 
@@ -151,7 +151,6 @@ public static class PlanExecutor
                 .Concat(backups)
                 .ToList();
             if (backups.Count > 0) partial.RestoreFolder = plan.RestoreFolder;
-            journal.Complete(plan);
             return new ExecutionResult(r, true, partial);
         }
     }
@@ -267,14 +266,12 @@ public static class PlanExecutor
                 }
             }
 
-            journal.Complete(plan);
             r.Message = removed > 0 ? Loc.T("Restore.Done", removed) : Loc.T("Restore.None");
             r.Note(r.Message);
             return new ExecutionResult(r, true, null);
         }
         catch (Exception ex)
         {
-            journal.Complete(plan);
             r.Fail(Loc.T("Restore.Failed", ex.Message));
             return new ExecutionResult(r, false, null);
         }
@@ -375,7 +372,7 @@ public interface IPlanJournal
     void BackedUp(DeployPlan plan, BackupItem backup);
     void Writing(DeployPlan plan, string relativePath);
     void Deleting(DeployPlan plan, string relativePath);
-    void Complete(DeployPlan plan);
+    void Finish(DeployPlan plan, ExecutionResult result);
 }
 
 public sealed class NullPlanJournal : IPlanJournal
@@ -385,5 +382,5 @@ public sealed class NullPlanJournal : IPlanJournal
     public void BackedUp(DeployPlan plan, BackupItem backup) { }
     public void Writing(DeployPlan plan, string relativePath) { }
     public void Deleting(DeployPlan plan, string relativePath) { }
-    public void Complete(DeployPlan plan) { }
+    public void Finish(DeployPlan plan, ExecutionResult result) { }
 }

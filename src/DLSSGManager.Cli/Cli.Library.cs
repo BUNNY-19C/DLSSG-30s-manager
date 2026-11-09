@@ -15,9 +15,10 @@ public sealed partial class Cli
         return (loaded.Data, null);
     }
 
-    private bool SaveLibrary(AppData data)
+    private bool SaveLibrary(AppData data) => ReportSave(LibraryStore.Save(data));
+
+    private bool ReportSave(OpResult result)
     {
-        var result = LibraryStore.Save(data);
         if (!result.Ok) error.WriteLine("保存游戏库失败：" + result.Message);
         return result.Ok;
     }
@@ -107,13 +108,14 @@ public sealed partial class Cli
         var (data, failed) = LoadLibrary();
         if (failed is { } code) return code;
 
-        var reports = PlanRecovery.RecoverAll();
+        using var writer = LibraryStore.BeginWrite(data);
+        var reports = PlanRecovery.RecoverAll(writer.JournalDirectory);
         foreach (var report in reports)
         {
             foreach (var line in report.Lines) output.WriteLine(line);
-            if (data.Games.FirstOrDefault(g => g.Id == report.GameId) is { } game) game.Deployment = report.Record;
+            if (data.Games.FirstOrDefault(report.Matches) is { } game) game.Deployment = report.Record;
         }
-        if (reports.Count > 0 && !SaveLibrary(data)) return ExitCode.Failed;
+        if (reports.Count > 0 && !ReportSave(writer.Save())) return ExitCode.Failed;
 
         output.WriteLine(reports.Count == 0 ? "没有中断的操作。" : Loc.T("Recovery.Summary", reports.Count));
         return reports.Any(r => r.Failed) ? ExitCode.Failed : ExitCode.Ok;

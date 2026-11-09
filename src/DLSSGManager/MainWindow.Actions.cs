@@ -40,7 +40,6 @@ public partial class MainWindow
     private async void RunDeploy(GameEntry game)
     {
         if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
-        if (Management.SaveFailure is not null && !SaveLibrary()) return;
 
         _busy = true;
         BatchStatusText.Text = Loc.T("Deploy.Starting", game.Name);
@@ -63,15 +62,16 @@ public partial class MainWindow
                 _log.Write(Loc.T("Anti.OverrideLog", game.Name, protection.Summary));
             }
 
+            using var writer = BeginLibraryWrite(saveEdits: true);
+            if (writer is null) return;
             var source = CurrentSource(game);
             var result = await DeploymentService.DeployAsync(game, source,
                 allowProtected: protection.HasKernelAntiCheat, ConfirmElevation);
 
             _log.Details(result.Lines);
-            _log.Result(result.Ok, result.Message);
-
-            SaveLibrary();
-            await FinishGameActionAsync(game);
+            var saved = SaveLibrary(writer);
+            _log.Result(result.Ok && saved, saved ? result.Message : Loc.T("Manage.RecordUnsaved"));
+            if (saved) await FinishGameActionAsync(game, writer);
         }
         catch (Exception ex)
         {
@@ -92,11 +92,11 @@ public partial class MainWindow
     /// the UI thread like every other status read; awaiting it keeps the busy flag held until the
     /// fresh state is applied, so a later evaluation cannot overwrite a newer one.
     /// </summary>
-    private async Task FinishGameActionAsync(GameEntry game)
+    private async Task FinishGameActionAsync(GameEntry game, LibraryStore.Writer writer)
     {
         var check = await Task.Run(() => DeploymentService.Evaluate(game));
         ApplyGameCheck(game, check);
-        SaveLibrary();
+        SaveLibrary(writer);
         UpdateStatusCard();
     }
 
@@ -118,7 +118,8 @@ public partial class MainWindow
     private async void RunRestore(GameEntry game)
     {
         if (GameWorkRunning) { _log.Write(Loc.T("Scan.Busy")); return; }
-        if (Management.SaveFailure is not null && !SaveLibrary()) return;
+        using var writer = BeginLibraryWrite(saveEdits: true);
+        if (writer is null) return;
 
         _busy = true;
         BatchStatusText.Text = Loc.T("Restore.Starting", game.Name);
@@ -129,9 +130,9 @@ public partial class MainWindow
             var result = await DeploymentService.RestoreAsync(game, removeLogs, ConfirmElevation);
 
             _log.Details(result.Lines);
-            _log.Result(result.Ok, result.Message);
-            SaveLibrary();
-            await FinishGameActionAsync(game);
+            var saved = SaveLibrary(writer);
+            _log.Result(result.Ok && saved, saved ? result.Message : Loc.T("Manage.RecordUnsaved"));
+            if (saved) await FinishGameActionAsync(game, writer);
         }
         catch (Exception ex)
         {

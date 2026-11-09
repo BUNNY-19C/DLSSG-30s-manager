@@ -10,6 +10,7 @@ public sealed partial class Cli
         var (data, failed) = LoadLibrary();
         if (failed is { } code) return code;
         if (RequireGame(data, a) is not { } game) return ExitCode.NotFound;
+        using var writer = LibraryStore.BeginWrite(data);
 
         var allowProtected = a.Flag("allow-anticheat");
         var source = new ModSource(BuildCatalog.SourceDirectory(ModRoot(a, data), game.Profile.RuntimeModel));
@@ -21,7 +22,7 @@ public sealed partial class Cli
             error.WriteLine(planned.Error);
             return planned.Protection?.HasKernelAntiCheat == true && !allowProtected ? ExitCode.Blocked : ExitCode.Failed;
         }
-        return ExecutePlan(data, game, planned);
+        return ExecutePlan(writer, game, planned);
     }
 
     private int RestoreGame(Arguments a)
@@ -29,6 +30,7 @@ public sealed partial class Cli
         var (data, failed) = LoadLibrary();
         if (failed is { } code) return code;
         if (RequireGame(data, a) is not { } game) return ExitCode.NotFound;
+        using var writer = LibraryStore.BeginWrite(data);
 
         var planned = DeployPlanner.PlanRestore(game, a.Flag("remove-logs"));
         if (planned.Plan is null)
@@ -36,14 +38,14 @@ public sealed partial class Cli
             error.WriteLine(planned.Error);
             return ExitCode.Failed;
         }
-        return ExecutePlan(data, game, planned);
+        return ExecutePlan(writer, game, planned);
     }
 
     /// <summary>
     /// Runs a plan in this process, journalled. A folder needing administrator rights is reported, not
     /// elevated: a script decides for itself whether to run the command elevated.
     /// </summary>
-    private int ExecutePlan(AppData data, GameEntry game, PlanOutcome planned)
+    private int ExecutePlan(LibraryStore.Writer writer, GameEntry game, PlanOutcome planned)
     {
         if (planned.NeedsElevation)
         {
@@ -51,12 +53,13 @@ public sealed partial class Cli
             return ExitCode.NeedsElevation;
         }
 
-        var result = PlanExecutor.Execute(planned.Plan!, game.Deployment, new FilePlanJournal(game.Deployment));
+        var result = PlanExecutor.Execute(planned.Plan!, game.Deployment,
+            new FilePlanJournal(game.Deployment, writer.JournalDirectory));
         result.ApplyTo(game);
         foreach (var line in result.Result.Lines) output.WriteLine(line);
 
         // Record first, then report: a deployment the library does not know about cannot be restored.
-        if (!SaveLibrary(data)) return ExitCode.Failed;
+        if (!ReportSave(writer.Save())) return ExitCode.Failed;
         if (!result.Result.Ok)
         {
             error.WriteLine(result.Result.Message);

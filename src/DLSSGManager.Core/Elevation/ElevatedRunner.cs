@@ -53,7 +53,8 @@ public static class ElevatedRunner
     /// this plan or the previous record made. Anything else is dropped, so a forged record cannot make a
     /// later restore delete or copy files the manager never wrote.
     /// </summary>
-    internal static DeploymentInfo? CheckRecord(DeployPlan plan, DeploymentInfo? reported, DeploymentInfo? previous)
+    internal static DeploymentInfo? CheckRecord(DeployPlan plan, DeploymentInfo? reported, DeploymentInfo? previous,
+        string? trustedRestoreRoot = null)
     {
         if (reported is null) return null;
 
@@ -81,7 +82,7 @@ public static class ElevatedRunner
             }
         }
 
-        var restoreRoot = Path.GetFullPath(AppPaths.RestoreRoot).TrimEnd('\\') + "\\";
+        var restoreRoot = Path.GetFullPath(trustedRestoreRoot ?? AppPaths.RestoreRoot).TrimEnd('\\') + "\\";
         var knownBackups = (previous?.Backups ?? new List<BackupItem>()).Select(b => b.StoredPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var planFolder = Path.GetFullPath(plan.RestoreFolder).TrimEnd('\\') + "\\";

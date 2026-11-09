@@ -95,14 +95,42 @@ public partial class MainWindow
         GameEdited(sender, e);
     }
 
-    private bool SaveLibrary()
+    private LibraryStore.Writer? BeginLibraryWrite(bool saveEdits = false)
     {
-        var result = LibraryStore.Save(_data);
-        Management.SaveFailure = result.Ok ? null : result.Message;
-        if (result.Ok) Management.RememberSaved(_data);
-        else _log.Result(false, Loc.T("Manage.SaveFailed", result.Message));
+        LibraryStore.Writer writer;
+        try { writer = LibraryStore.BeginWrite(_data); }
+        catch (Exception ex)
+        {
+            ReportLibrarySaveFailure(ex.Message);
+            return null;
+        }
+
+        if (!saveEdits || !Management.HasUnsavedChanges(_data) && Management.SaveFailure is null)
+            return writer;
+        if (SaveLibrary(writer)) return writer;
+        writer.Dispose();
+        return null;
+    }
+
+    private void ReportLibrarySaveFailure(string message)
+    {
+        Management.SaveFailure = message;
+        _log.Result(false, Loc.T("Manage.SaveFailed", message));
         UpdateManagementState();
-        return result.Ok;
+    }
+
+    private bool SaveLibrary(LibraryStore.Writer? writer = null)
+    {
+        var result = writer is null ? LibraryStore.Save(_data) : writer.Save();
+        if (!result.Ok)
+        {
+            ReportLibrarySaveFailure(result.Message);
+            return false;
+        }
+        Management.SaveFailure = null;
+        Management.RememberSaved(_data);
+        UpdateManagementState();
+        return true;
     }
 
     private void SaveConfiguration_Click(object sender, RoutedEventArgs e)
@@ -169,11 +197,6 @@ public partial class MainWindow
             return;
         }
         _closeWhenIdle = false;
-        if (Management.SaveFailure is not null)
-        {
-            if (!SaveLibrary()) e.Cancel = true;
-            return;
-        }
         if (!Management.HasUnsavedChanges(_data)) return;
         var answer = MessageBox.Show(this, Loc.T("Manage.CloseUnsaved"), Loc.T("App.Name"),
             MessageBoxButton.YesNoCancel, MessageBoxImage.Question);

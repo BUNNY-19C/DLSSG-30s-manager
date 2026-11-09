@@ -20,15 +20,20 @@ public sealed record JournalEntry
 
     /// <summary>Relative paths the run began deleting, in order.</summary>
     public List<string> Deleting { get; init; } = new();
+
+    /// <summary>Disk work ended. This record still needs to be saved in the library.</summary>
+    public JournalCompletion? Completion { get; init; }
 }
+
+public sealed record JournalCompletion(DeploymentInfo? Record, bool RecoveryFailed = false);
 
 /// <summary>
 /// Write-ahead journal for plan execution, one file per game under <c>%APPDATA%\DLSSGManager\journal</c>.
 ///
 /// Every step is recorded before it touches the game folder and the file is flushed to disk, so a run
 /// cut short by a crash, a kill or a power loss leaves behind exactly what it was doing. On the next
-/// start <see cref="PlanRecovery"/> reads these and undoes the partial run. A run that ends normally —
-/// success or handled failure — deletes its journal.
+/// start <see cref="PlanRecovery"/> reads these and undoes the partial run. When execution finishes,
+/// the journal retains its final record until the library acknowledges saving it.
 /// </summary>
 public sealed class FilePlanJournal : IPlanJournal
 {
@@ -52,8 +57,15 @@ public sealed class FilePlanJournal : IPlanJournal
     {
         lock (_sync)
         {
-            _entry = new JournalEntry { Plan = plan, Previous = _previous, StartedAt = DateTime.Now };
-            Flush(plan.GameId);
+            if (string.IsNullOrWhiteSpace(plan.GameId) || plan.GameId.Length > 64 ||
+                plan.GameId.Any(c => !char.IsAsciiLetterOrDigit(c)))
+                throw new IOException("Invalid game ID.");
+            var path = PathFor(_directory, plan.GameId);
+            if (File.Exists(path)) throw new IOException(Loc.T("Recovery.Pending"));
+
+            var entry = new JournalEntry { Plan = plan, Previous = _previous, StartedAt = DateTime.Now };
+            Write(path, entry);
+            _entry = entry;
         }
     }
 
@@ -63,13 +75,14 @@ public sealed class FilePlanJournal : IPlanJournal
 
     public void Deleting(DeployPlan plan, string relativePath) => Update(plan, e => e.Deleting.Add(relativePath));
 
-    public void Complete(DeployPlan plan)
+    public void Finish(DeployPlan plan, ExecutionResult result)
     {
         lock (_sync)
         {
+            if (_entry is null) return;
+            var completion = new JournalCompletion(result.RecordChanged ? result.Record : _entry.Previous);
+            Write(PathFor(_directory, plan.GameId), _entry with { Completion = completion });
             _entry = null;
-            try { File.Delete(PathFor(_directory, plan.GameId)); }
-            catch (Exception ex) { AppPaths.Log("删除操作日志失败: " + ex.Message); }
         }
     }
 
@@ -79,23 +92,49 @@ public sealed class FilePlanJournal : IPlanJournal
         {
             if (_entry is null) return;
             change(_entry);
-            Flush(plan.GameId);
+            Write(PathFor(_directory, plan.GameId), _entry);
         }
     }
 
     /// <summary>Writes the journal and forces it to disk before the step it describes runs.</summary>
-    private void Flush(string gameId)
+    internal static void Write(string path, JournalEntry entry)
     {
-        Directory.CreateDirectory(_directory);
-        var path = PathFor(_directory, gameId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var tmp = path + ".tmp";
         using (var stream = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            JsonSerializer.Serialize(stream, _entry, Options);
+            JsonSerializer.Serialize(stream, entry, Options);
             stream.Flush(flushToDisk: true);
         }
         File.Move(tmp, path, overwrite: true);
     }
+
+    /// <summary>Called under the library write lock, after the matching records are on disk.</summary>
+    internal static void AcknowledgeSaved(AppData data, string directory)
+    {
+        try
+        {
+            foreach (var (path, entry) in Pending(directory))
+            {
+                if (entry?.Completion is not { } completion) continue;
+                var game = data.Games.FirstOrDefault(g => SameGame(g, entry.Plan));
+                if (game is null || JsonSerializer.Serialize(game.Deployment) != JsonSerializer.Serialize(completion.Record))
+                    continue;
+
+                if (completion.RecoveryFailed) File.Move(path, path + ".failed", overwrite: true);
+                else File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            // The library is already saved. A leftover completed journal can be acknowledged again.
+            AppPaths.Log("清理已保存的操作日志失败: " + ex.Message);
+        }
+    }
+
+    internal static bool SameGame(GameEntry game, DeployPlan plan) =>
+        string.Equals(game.Id, plan.GameId, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(game.RenderDir, plan.RenderDir, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Journals left behind by interrupted runs.</summary>
     public static IReadOnlyList<(string Path, JournalEntry? Entry)> Pending(string? directory = null)
@@ -123,6 +162,10 @@ public sealed record RecoveryReport(string GameId, string RenderDir, bool Rolled
 
     /// <summary>Some step could not be undone (typically a folder that needs administrator rights).</summary>
     public bool Failed { get; init; }
+
+    public bool Matches(GameEntry game) =>
+        string.Equals(game.Id, GameId, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(game.RenderDir, RenderDir, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -156,16 +199,20 @@ public static class PlanRecovery
                 continue;
             }
 
+            if (entry.Completion is { } completion)
+            {
+                reports.Add(new RecoveryReport(entry.Plan.GameId, entry.Plan.RenderDir, false,
+                    new[] { Loc.T("Recovery.RecordRecovered", entry.Plan.RenderDir) })
+                {
+                    Record = completion.Record,
+                    Failed = completion.RecoveryFailed,
+                });
+                continue;
+            }
+
             var report = entry.Plan.Kind == PlanKind.Deploy ? RollBackDeploy(entry) : FinishRestore(entry);
             foreach (var line in report.Lines) AppPaths.Log("[recovery] " + line);
-            try
-            {
-                // A recovery that could not complete keeps its journal for inspection, under a name the
-                // next start does not pick up again (it would fail the same way every time).
-                if (report.Failed) File.Move(path, path + ".failed", overwrite: true);
-                else File.Delete(path);
-            }
-            catch (Exception ex) { AppPaths.Log("处理操作日志失败: " + ex.Message); }
+            FilePlanJournal.Write(path, entry with { Completion = new JournalCompletion(report.Record, report.Failed) });
             reports.Add(report);
         }
         return reports;
