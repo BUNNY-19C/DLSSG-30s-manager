@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Domain layer: library, deployment, download, detection. No WPF types here, so it can be tested
+    and driven by the command line as well as the window.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>DLSSGManager.Core</AssemblyName>
+    <RootNamespace>DLSSGManager</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DLSSGManager.Core.Tests" />
+  </ItemGroup>
+
+</Project>

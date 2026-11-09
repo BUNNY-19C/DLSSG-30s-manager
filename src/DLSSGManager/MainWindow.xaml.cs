@@ -26,6 +26,9 @@ public partial class MainWindow : Window
     private ModFetcher.DownloadGate? _fetchGate;
 
 
+    /// <summary>How the library was read; a recovered or read-only library is reported once at startup.</summary>
+    private readonly LibraryLoadResult _libraryLoad;
+
     /// <summary>Keeps overlapping status refreshes from racing over the same game properties.</summary>
     private bool _statusRefreshRunning;
 
@@ -67,7 +70,8 @@ public partial class MainWindow : Window
         // Loaded once and reused: the language has to be applied before the first XAML string is
         // resolved (otherwise the window renders in the default language and switches a moment later),
         // and the rest of the setup needs the same data.
-        _data = LibraryStore.Load();
+        _libraryLoad = LibraryStore.LoadWithStatus();
+        _data = _libraryLoad.Data;
 
         Loc.SetLanguage(_data.InterfaceLanguage);
         Theme.ApplyPreference(_data.InterfaceTheme);
@@ -382,6 +386,7 @@ public partial class MainWindow : Window
         RefreshAllStatus();
 
         _log.Write(Loc.T("Status.DataDir", AppPaths.Root));
+        ReportLibraryLoad();
         if (!Native.IsElevated())
             _log.Write(Loc.T("Status.NoPermissionHint"));
 
@@ -962,6 +967,29 @@ public partial class MainWindow : Window
     /// back here, since assigning those properties is what raises the change notifications the list
     /// binds to.
     /// </summary>
+    /// <summary>
+    /// Tells the user when the library had to be recovered: silently starting from a backup or an
+    /// empty list would hide that deployment records may be missing.
+    /// </summary>
+    private void ReportLibraryLoad()
+    {
+        var (key, args) = _libraryLoad.Outcome switch
+        {
+            LibraryLoadOutcome.RecoveredFromBackup when _libraryLoad.SetAsidePath is not null =>
+                ("Library.Recovered", new object?[] { _libraryLoad.Error, _libraryLoad.SetAsidePath }),
+            LibraryLoadOutcome.Quarantined =>
+                ("Library.Quarantined", new object?[] { _libraryLoad.Error, _libraryLoad.SetAsidePath }),
+            LibraryLoadOutcome.ReadOnly =>
+                ("Library.ReadOnly", new object?[] { _libraryLoad.Error }),
+            _ => (null, Array.Empty<object?>()),
+        };
+        if (key is null) return;
+
+        var text = Loc.T(key, args);
+        _log.Result(false, text);
+        MessageBox.Show(this, text, Loc.T("App.Name"), MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     private async void RefreshAllStatus()
     {
         // Called at startup, after batch operations, and by the refresh button, so two runs can

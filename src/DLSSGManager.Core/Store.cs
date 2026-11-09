@@ -71,43 +71,135 @@ public static class AppPaths
     }
 }
 
+/// <summary>What happened while reading the library, beyond the data itself.</summary>
+public enum LibraryLoadOutcome
+{
+    /// <summary>The library was read normally.</summary>
+    Loaded,
+    /// <summary>No library existed yet; a new one starts empty.</summary>
+    Created,
+    /// <summary>
+    /// The library could not be read; it was set aside and the previous good copy was loaded instead.
+    /// </summary>
+    RecoveredFromBackup,
+    /// <summary>
+    /// The library could not be read and was set aside; no usable backup existed, so the library
+    /// starts empty. The unreadable file is kept for manual recovery.
+    /// </summary>
+    Quarantined,
+    /// <summary>
+    /// The library could not be read and could not be moved out of the way either. Saving is blocked
+    /// for this session so the only copy of the deployment records is never overwritten.
+    /// </summary>
+    ReadOnly,
+}
+
+/// <summary>Result of <see cref="LibraryStore.LoadWithStatus"/>.</summary>
+public sealed record LibraryLoadResult(AppData Data, LibraryLoadOutcome Outcome, string? Error = null, string? SetAsidePath = null);
+
 public static class LibraryStore
 {
+    /// <summary>Suffix of the previous good copy, rotated on every successful save.</summary>
+    public const string BackupSuffix = ".bak";
+
     /// <summary>
     /// Reads the library from an explicit path or the app's default data location.
     /// </summary>
-    public static AppData Load(string? path = null)
+    public static AppData Load(string? path = null) => LoadWithStatus(path).Data;
+
+    /// <summary>
+    /// Reads the library and reports whether it had to be recovered.
+    ///
+    /// The library holds the only record of which files were written into game folders and where the
+    /// displaced originals are stored. An unreadable file must therefore never be replaced by an empty
+    /// library: it is renamed aside (and the last good copy loaded when there is one), and if it cannot
+    /// even be renamed, saving is blocked for the session.
+    /// </summary>
+    public static LibraryLoadResult LoadWithStatus(string? path = null)
     {
         var file = path ?? AppPaths.LibraryFile;
+        if (!File.Exists(file))
+        {
+            // A crash between writing the backup and replacing the file can leave only the backup.
+            if (TryRead(file + BackupSuffix, out var orphan, out _) && orphan is not null)
+                return new LibraryLoadResult(orphan, LibraryLoadOutcome.RecoveredFromBackup);
+            return new LibraryLoadResult(new AppData(), LibraryLoadOutcome.Created);
+        }
+
+        if (TryRead(file, out var data, out var error) && data is not null)
+            return new LibraryLoadResult(data, LibraryLoadOutcome.Loaded);
+
+        AppPaths.Log("读取库文件失败: " + error);
+
+        var aside = $"{file}.corrupt-{DateTime.Now:yyyyMMdd_HHmmss}";
         try
         {
-            if (File.Exists(file))
-            {
-                var json = File.ReadAllText(file, Encoding.UTF8);
-                var data = System.Text.Json.JsonSerializer.Deserialize<AppData>(json, JsonOptions);
-                if (data is not null)
-                {
-                    // Only the current runtime is selectable; deployment records still describe
-                    // the files actually installed so existing restore records remain accurate.
-                    data.DownloadBuild = BuildCatalog.Default;
-                    foreach (var g in data.Games) Normalize(g);
-                    return data;
-                }
-            }
+            File.Move(file, aside);
+            AppPaths.Log("已将无法读取的库文件另存为: " + aside);
         }
         catch (Exception ex)
         {
-            AppPaths.Log("读取库文件失败: " + ex.Message);
+            AppPaths.Log("无法移开损坏的库文件，本次会话禁止保存: " + ex.Message);
+            var locked = new AppData { SaveBlockedReason = error ?? ex.Message };
+            return new LibraryLoadResult(locked, LibraryLoadOutcome.ReadOnly, error);
         }
 
-        return new AppData();
+        if (TryRead(file + BackupSuffix, out var backup, out _) && backup is not null)
+            return new LibraryLoadResult(backup, LibraryLoadOutcome.RecoveredFromBackup, error, aside);
+
+        return new LibraryLoadResult(new AppData(), LibraryLoadOutcome.Quarantined, error, aside);
+    }
+
+    private static bool TryRead(string file, out AppData? data, out string? error)
+    {
+        data = null;
+        error = null;
+        try
+        {
+            if (!File.Exists(file))
+            {
+                error = "missing";
+                return false;
+            }
+
+            var json = File.ReadAllText(file, Encoding.UTF8);
+            data = System.Text.Json.JsonSerializer.Deserialize<AppData>(json, JsonOptions);
+            if (data is null)
+            {
+                error = "empty document";
+                return false;
+            }
+
+            // Only the current runtime is selectable; deployment records still describe
+            // the files actually installed so existing restore records remain accurate.
+            data.DownloadBuild = BuildCatalog.Default;
+            data.Games ??= new();
+            foreach (var g in data.Games) Normalize(g);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            data = null;
+            error = ex.Message;
+            return false;
+        }
     }
 
     public static string Serialize(AppData data) => System.Text.Json.JsonSerializer.Serialize(data, JsonOptions);
 
+    /// <summary>
+    /// Writes the library atomically, keeping the previous version as <c>library.json.bak</c>.
+    /// Refuses when the session loaded in read-only mode.
+    /// </summary>
     public static OpResult Save(AppData data, string? path = null)
     {
         var result = new OpResult();
+        if (data.SaveBlockedReason is not null)
+        {
+            result.Fail(Loc.T("Library.SaveBlocked", data.SaveBlockedReason));
+            return result;
+        }
+
         var file = path ?? AppPaths.LibraryFile;
         try
         {
@@ -118,7 +210,11 @@ public static class LibraryStore
             var json = Serialize(data);
             var tmp = file + ".tmp";
             File.WriteAllText(tmp, json, new UTF8Encoding(false));
-            File.Move(tmp, file, overwrite: true);
+
+            if (File.Exists(file))
+                File.Replace(tmp, file, file + BackupSuffix, ignoreMetadataErrors: true);
+            else
+                File.Move(tmp, file);
         }
         catch (Exception ex)
         {

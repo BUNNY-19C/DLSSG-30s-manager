@@ -20,12 +20,17 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          global-json-file: global.json
 
       - name: 构建
         shell: pwsh
         run: |
           dotnet build -c Release --nologo
+
+      - name: 测试
+        shell: pwsh
+        run: |
+          dotnet test -c Release --no-build --nologo
 
       - name: 解析版本号
         id: version

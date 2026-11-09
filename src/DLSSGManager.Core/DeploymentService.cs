@@ -44,25 +44,19 @@ public static class DeploymentService
     }
 
     /// <summary>
-    /// True when the file's Authenticode signature is intact and was made by the project's certificate.
+    /// True when the file's Authenticode signature is intact and was made by a pinned project
+    /// certificate (<see cref="ProjectSigning"/>).
     ///
     /// <see cref="X509Certificate.CreateFromSignedFile"/> only extracts the certificate — it does not
     /// check that the signature still matches the bytes. A tampered DLL would therefore look
     /// "signed" if that were the only check, which matters because downloads may come from a mirror.
     /// The signature is validated through WinVerifyTrust and the result is interpreted fail-closed.
+    /// The signer is identified by thumbprint: a subject name can be chosen by anyone.
     /// </summary>
     public static bool IsProjectSigned(string path)
     {
-        var cert = ReadSignerCertificate(path, out var signatureIntact);
-        if (cert is null) return false;
-
-        using (cert)
-        {
-            if (!signatureIntact) return false;
-
-            var subject = cert.Subject ?? "";
-            return subject.Contains("DLSSG", StringComparison.OrdinalIgnoreCase);
-        }
+        using var cert = ReadSignerCertificate(path, out var signatureIntact);
+        return ProjectSigning.IsProjectSignature(cert, signatureIntact);
     }
 
     /// <summary>
@@ -80,7 +74,11 @@ public static class DeploymentService
         X509Certificate2 cert;
         try
         {
+            // X509CertificateLoader has no equivalent for reading the signer out of a PE file; the
+            // signature itself is validated separately by WinVerifyTrust below.
+#pragma warning disable SYSLIB0057
             cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+#pragma warning restore SYSLIB0057
         }
         catch
         {
@@ -913,8 +911,12 @@ public static class DeploymentService
             if (!File.Exists(path)) continue;
             var nvidia = name.EndsWith("/nvngx_dlss.dll") || name.EndsWith("/nvngx_dlssg.dll");
             using var cert = ReadSignerCertificate(path, out var intact, requireTrusted: nvidia);
-            var expected = nvidia ? "NVIDIA Corporation" : "DLSSG";
-            if (intact && cert?.Subject.Contains(expected, StringComparison.OrdinalIgnoreCase) == true)
+            // NVIDIA files chain to a trusted root (requireTrusted), so the subject is meaningful there;
+            // the project's self-signed files are identified by pinned thumbprint only.
+            var recognised = nvidia
+                ? intact && cert?.Subject.Contains("NVIDIA Corporation", StringComparison.OrdinalIgnoreCase) == true
+                : ProjectSigning.IsProjectSignature(cert, intact);
+            if (recognised)
                 deployment.Files.Add(new DeployedFile { FileName = name, Sha256 = Sha256(path), Size = new FileInfo(path).Length });
         }
 

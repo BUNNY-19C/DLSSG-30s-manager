@@ -76,20 +76,13 @@ public static class ModFetcher
                                            uri.Host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>
-    /// Known project signing certificates. The 0.4.1 Release archive and the official 0.4.1 tag's
-    /// version.dll both use CN=DLSSG Throwaway Test, D963A96D623B85F67B7B323BEB353CEE90225D40
-    /// (verified 2026-10-27). Its bundled README still names the previous certificate, retained here
-    /// for importing older payloads. These pins do not replace signature-integrity checks.
+    /// Project signing certificates; see <see cref="ProjectSigning.PinnedThumbprints"/>.
     ///
     /// A mismatch on a mirror means the file is not the project's build, so the download is rejected. A
     /// mismatch on GitHub's own endpoints is logged as a warning instead, so upstream rotating its
     /// self-signed certificate does not brick the updater.
     /// </summary>
-    private static readonly string[] PinnedCertThumbprints =
-    {
-        "85BA66762F851E49148D706915D09026281418E6",
-        "D963A96D623B85F67B7B323BEB353CEE90225D40",
-    };
+    private static IReadOnlyList<string> PinnedCertThumbprints => ProjectSigning.PinnedThumbprints;
 
     /// <summary>Signer subject fragment used as a secondary sanity check on any source.</summary>
     private const string ExpectedSignerSubject = "DLSSG";

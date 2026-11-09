@@ -353,4 +353,11 @@ public sealed class AppData
     public string GpuName { get; set; } = "";
     public string GpuDriver { get; set; } = "";
     public string RecommendedRouter { get; set; } = "SM86";
+
+    /// <summary>
+    /// Set when the library on disk could not be read or moved aside: saving is refused for the
+    /// session so the unreadable original — the only copy of the deployment records — survives.
+    /// </summary>
+    [JsonIgnore]
+    public string? SaveBlockedReason { get; set; }
 }

@@ -1,0 +1,36 @@
+name: CI
+
+# Every push and pull request: build everything and run the test suite. Release publishing lives in
+# release.yml and runs the same tests before it uploads anything.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: 构建
+        shell: pwsh
+        run: dotnet build -c Release --nologo
+
+      - name: 测试
+        shell: pwsh
+        run: dotnet test -c Release --no-build --nologo --logger "trx;LogFileName=results.trx"
+
+      - name: 上传测试结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/TestResults/*.trx'
