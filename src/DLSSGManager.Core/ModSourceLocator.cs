@@ -182,10 +182,14 @@ public static class ModSourceLocator
         return false;
     }
 
-    /// <summary>True when the folder exists and contains the file that identifies a mod source.</summary>
+    /// <summary>
+    /// True when the folder exists and holds a payload: directly (the older flat layout, or a release
+    /// folder itself) or as the active release of a versioned mod root.
+    /// </summary>
     public static bool LooksLikeSource(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return false;
-        return File.Exists(Path.Combine(path, MarkerFile));
+        return File.Exists(Path.Combine(path, MarkerFile)) ||
+               File.Exists(Path.Combine(ModStore.ActiveDirectory(path), MarkerFile));
     }
 }

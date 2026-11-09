@@ -410,8 +410,9 @@ public partial class MainWindow : Window
     {
         if (_busy) return;
 
+        // Downloads go to the mod root; each release then lands in its own versions\ folder.
         _data.ModSourcePath = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
-        var target = BuildCatalog.SourceDirectory(_data.ModSourcePath, _data.DownloadBuild);
+        var target = _data.ModSourcePath;
         _log.Write(Loc.T("Fetch.AutoStart", target));
 
         _busy = true;
@@ -619,8 +620,9 @@ public partial class MainWindow : Window
     {
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
+        // Downloads and imports go to the mod root; each release lands in its own versions\ folder.
         var sourceRoot = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
-        var target = BuildCatalog.SourceDirectory(sourceRoot, _data.DownloadBuild);
+        var target = sourceRoot;
 
         // The dialog runs the download or offline import itself, with its own progress, pause, skip
         // and cancel; the window only records what it did once it closes.

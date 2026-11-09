@@ -14,4 +14,9 @@
     <InternalsVisibleTo Include="DLSSGManager.Core.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Release manifests: exact file hashes of each supported upstream release. -->
+    <EmbeddedResource Include="Payload\Manifests\*.json" />
+  </ItemGroup>
+
 </Project>

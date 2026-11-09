@@ -47,7 +47,8 @@ internal sealed class DeploymentFixture : IDisposable
         Directory.CreateDirectory(GameDir);
 
         WritePayload("dlssg_sm86.ini", System.Text.Encoding.UTF8.GetBytes(Ini041));
-        WritePayload(ModFetcher.VersionMarkerName, "0.4.1"u8.ToArray());
+        // Not a real release label: the payload is random bytes, so no manifest may claim it.
+        WritePayload(ModFetcher.VersionMarkerName, "0.4.1-test"u8.ToArray());
         WritePayload("version.dll", Random());
         foreach (var name in new[] { "winmm.dll", "dbghelp.dll", "dinput8.dll", "dxgi.dll", "d3d12.dll" })
             WritePayload(Path.Combine(ModSource.AltDirName, name), Random());

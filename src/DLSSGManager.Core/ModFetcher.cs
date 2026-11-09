@@ -33,11 +33,11 @@ public enum PayloadPackage
 /// · Every request is HTTPS, on an allow-listed host whose resolved addresses must all be public.
 ///   Redirects are followed manually with the same checks at each hop.
 /// · Response size is capped, and archive entries may not escape the destination folder.
-/// · The payload is verified after download: every proxy DLL must carry a valid Authenticode
-///   signature. For third-party mirrors the signer must also match a pinned certificate
-///   thumbprint, because the mirror is not the authority for the content. For GitHub's own
-///   endpoints the certificate is logged but not required to match, so a future certificate
-///   rotation upstream does not break downloads.
+/// · The payload is verified after download against the release manifest
+///   (<see cref="PayloadVerifier"/>): every file must have exactly the recorded SHA-256, whichever
+///   source served it, and project DLLs must also carry an intact pinned signature. No source is
+///   trusted for content — a replaced tag or release attachment on GitHub is rejected like a
+///   tampered mirror.
 ///
 /// Sources are tried in order of authority and efficiency, so a blocked or flaky endpoint only
 /// costs a fallback rather than a failed download.
@@ -54,8 +54,7 @@ public static class ModFetcher
         "api.github.com",
         "release-assets.githubusercontent.com",
         "objects.githubusercontent.com",
-        // Third-party mirrors. Accepted only with a matching certificate pin, because a mirror is not
-        // the authority for this content — see Verify().
+        // Third-party mirrors. Their content is accepted only when it matches the release manifest.
         "cdn.jsdelivr.net",
         "gh-proxy.com",
         "ghfast.top",
@@ -74,18 +73,6 @@ public static class ModFetcher
         (AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase) ||
          AllowedHostSuffixes.Any(suffix => uri.Host.Length > suffix.Length &&
                                            uri.Host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)));
-
-    /// <summary>
-    /// Project signing certificates; see <see cref="ProjectSigning.PinnedThumbprints"/>.
-    ///
-    /// A mismatch on a mirror means the file is not the project's build, so the download is rejected. A
-    /// mismatch on GitHub's own endpoints is logged as a warning instead, so upstream rotating its
-    /// self-signed certificate does not brick the updater.
-    /// </summary>
-    private static IReadOnlyList<string> PinnedCertThumbprints => ProjectSigning.PinnedThumbprints;
-
-    /// <summary>Signer subject fragment used as a secondary sanity check on any source.</summary>
-    private const string ExpectedSignerSubject = "DLSSG";
 
     private const long MaxArchiveBytes = 256L * 1024 * 1024;
 
@@ -124,34 +111,15 @@ public static class ModFetcher
     /// </summary>
     public const string VersionMarkerName = ".manager-version";
 
-    private sealed record Artifact(string SourcePath, string DestinationPath, bool Required, bool NeedsSignature, bool Nvidia = false);
-
     /// <summary>
-    /// The payload the manager consumes, with the checks each file needs.
+    /// The files of the supported release, from its embedded manifest (<see cref="PayloadCatalog"/>).
     ///
     /// Source and destination are separate because upstream reorganises between releases: 0.3.0 moved the
-    /// alternate entry points from <c>altnative/</c> to <c>alternatives/</c>, dropped <c>winhttp.dll</c>
-    /// and added <c>d3d12.dll</c> and <c>dbghelp.dll</c>. Keeping the local layout fixed means an existing
-    /// install keeps working and only the download paths have to follow upstream.
+    /// alternate entry points from <c>altnative/</c> to <c>alternatives/</c>. Keeping the local layout
+    /// fixed means an existing install keeps working and only the download paths follow upstream.
+    /// Per-file sources skip the full-package files, which only the release archive carries.
     /// </summary>
-    private static readonly Artifact[] Payload =
-    {
-        new("version.dll", "version.dll", true, true),
-        new("dlssg_sm86.ini", "dlssg_sm86.ini", true, false),
-        new("alternatives/winmm.dll", "altnative/winmm.dll", true, true),
-        new("alternatives/dinput8.dll", "altnative/dinput8.dll", true, true),
-        new("alternatives/dbghelp.dll", "altnative/dbghelp.dll", true, true),
-        new("alternatives/dxgi.dll", "altnative/dxgi.dll", true, true),
-        new("alternatives/d3d12.dll", "altnative/d3d12.dll", true, true),
-        new("dlssg_sm86/backend/sm86_backend.dll", "dlssg_sm86/backend/sm86_backend.dll", true, true),
-        new("dlssg_sm86/runtime/nvngx_dlssg.dll", "dlssg_sm86/runtime/nvngx_dlssg.dll", true, true, true),
-        new("dlssg_sm86/kernels/fg_kernels.dll", "dlssg_sm86/kernels/fg_kernels.dll", true, true),
-        new("dlssg_sm86/xefg/xefg_kernels.dll", "dlssg_sm86/xefg/xefg_kernels.dll", true, true),
-        new("dlssg_sm86/sr/nvngx_dlss.dll", "dlssg_sm86/sr/nvngx_dlss.dll", false, true, true),
-        new("dlssg_sm86/sr/sr_kernels.dll", "dlssg_sm86/sr/sr_kernels.dll", false, true),
-        new("README.md", "README.md", false, false),
-        new("THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt", false, false),
-    };
+    private static IReadOnlyList<PayloadFile> Payload => PayloadCatalog.Supported.Files;
 
     /// <summary>
     /// Community builds this manager recognises by hash but no longer distributes.
@@ -1086,12 +1054,12 @@ public static class ModFetcher
             progress?.Report(Loc.T("Fetch.Verifying"));
             byteProgress?.Report(new FetchProgress(source.Name, 1, 1, 0, -1, 0, FetchPhase.Verifying));
 
-            // The shipped INI stopped carrying a version banner in 0.3.0; every source serves the
-            // supported tag, so that is the release this payload is.
-            var version = ModSource.ReadVersion(Path.Combine(staging, ModSource.IniName)) ?? SupportedRelease;
-            if (!InstallStaged(staging, destination, source.Official, runtimeModel, version, r, out var copied)) return r;
+            // Every source serves the supported tag, so its manifest is what the bytes must match —
+            // official endpoint or mirror alike.
+            var manifest = PayloadCatalog.Supported;
+            if (!InstallStaged(staging, destination, manifest, r)) return r;
 
-            r.Message = Loc.T("Fetch.UpdatedVersion", version, source.Name);
+            r.Message = Loc.T("Fetch.UpdatedVersion", manifest.Version, source.Name);
         }
         catch (OperationCanceledException)
         {
@@ -1110,31 +1078,28 @@ public static class ModFetcher
     }
 
     /// <summary>
-    /// Verifies a staged payload and only then copies it into the mod folder: a mirror, or a zip of
-    /// unknown origin, must not be able to put a DLL there that is not the project's build.
+    /// Verifies a staged payload against the release manifest and only then installs it as a new
+    /// release folder under the mod root (<see cref="ModStore"/>). A mirror, or a zip of unknown
+    /// origin, cannot put a file there that is not byte-for-byte the release. With
+    /// <paramref name="expected"/> null the release is identified from the payload itself.
     /// </summary>
-    private static bool InstallStaged(string staging, string destination, bool officialSource, string runtimeModel,
-        string releaseLabel, OpResult r, out int copied)
+    private static bool InstallStaged(string staging, string destination, PayloadManifest? expected, OpResult r)
     {
-        copied = 0;
-        var (accepted, message) = Verify(staging, officialSource);
-        r.Note(message);
-        if (!accepted)
+        var verified = PayloadVerifier.Verify(staging, expected);
+        r.Note(verified.Message);
+        if (!verified.Accepted)
         {
-            r.Fail(message);
+            r.Fail(verified.Message);
             return false;
         }
 
-        Directory.CreateDirectory(destination);
-        copied = Publish(staging, destination);
-        File.WriteAllText(Path.Combine(destination, BuildCatalog.Marker), BuildCatalog.Normalize(runtimeModel));
-        PruneSupersededEntries(destination, r);
+        var manifest = verified.Manifest!;
+        var copied = 0;
+        var active = ModStore.Activate(destination, manifest.Version,
+            folder => copied = PayloadVerifier.Publish(staging, folder, manifest), r);
+        if (!verified.HasSuperResolution) r.Note(Loc.T("Manage.NeedFullPackage"));
 
-        // Written even when empty: a payload that replaced the old files must not keep the old marker.
-        TryWriteVersionMarker(destination, releaseLabel);
-        if (!new ModSource(destination).SupportsSuperResolution) r.Note(Loc.T("Manage.NeedFullPackage"));
-
-        r.Note(Loc.T("Fetch.Updated", copied, destination));
+        r.Note(Loc.T("Fetch.Updated", copied, active));
         return true;
     }
 
@@ -1178,9 +1143,12 @@ public static class ModFetcher
 
             ct.ThrowIfCancellationRequested();
             progress?.Report(Loc.T("Fetch.Verifying"));
-            var label = ReleaseLabelOf(staging);
-            if (!InstallStaged(staging, destination, officialSource: false, runtimeModel, label ?? "", r, out _)) return r;
 
+            // The release is identified by its INI's hash; any known release can be imported, and its
+            // manifest then decides whether the rest of the archive is genuine.
+            if (!InstallStaged(staging, destination, expected: null, r)) return r;
+
+            var label = ModStore.ActiveVersion(destination) ?? ReleaseLabelOf(staging);
             if (label is not null && label != SupportedRelease)
                 r.Note(Loc.T("Fetch.ImportVersionMismatch", label, SupportedRelease));
             var full = ModSource.SuperResolutionFiles.All(p => File.Exists(Path.Combine(staging, p)));
@@ -1255,15 +1223,17 @@ public static class ModFetcher
         long total = 0;
         var done = 0;
 
-        foreach (var artifact in Payload)
+        // The repository holds no SR files; those come only with the release archive.
+        var files = Payload.Where(f => f.Package == PayloadPackageKind.Base).ToArray();
+        foreach (var artifact in files)
         {
             await (gate?.WaitAsync(ct) ?? Task.CompletedTask).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
             done++;
-            progress?.Report(Loc.T("Fetch.Downloading", artifact.SourcePath, done, Payload.Length));
+            progress?.Report(Loc.T("Fetch.Downloading", artifact.Source, done, files.Length));
 
-            var url = new Uri(UrlFor(source, RepoPath, RepoRef, BuildCatalog.RemotePath(artifact.SourcePath, runtimeModel)));
-            var target = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
+            var url = new Uri(UrlFor(source, RepoPath, RepoRef, BuildCatalog.RemotePath(artifact.Source, runtimeModel)));
+            var target = Path.Combine(staging, artifact.Source.Replace('/', Path.DirectorySeparatorChar));
 
             // Nested entries such as altnative/winmm.dll need their folder to exist before writing.
             var targetDir = Path.GetDirectoryName(target);
@@ -1272,171 +1242,21 @@ public static class ModFetcher
             try
             {
                 var index = done;
-                total += await TransferAsync(client, url, target, MaxArchiveBytes - total,
-                    (fileBytes, size, speed) => byteProgress?.Report(new FetchProgress(source.Name, index, Payload.Length, fileBytes, size, speed)),
+                // A file larger than the manifest says cannot be the release; stop reading there.
+                total += await TransferAsync(client, url, target, Math.Min(artifact.Size, MaxArchiveBytes - total),
+                    (fileBytes, size, speed) => byteProgress?.Report(new FetchProgress(source.Name, index, files.Length, fileBytes, size, speed)),
                     gate, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (!artifact.Required && ex is not OperationCanceledException)
             {
                 if (File.Exists(target)) File.Delete(target);
                 done--;
-                // Optional files (readme, presets) may legitimately be absent; note and move on.
-                r.Note(Loc.T("Fetch.SkippedOptional", artifact.SourcePath, ex.Message));
+                // Optional files (readme, notices) may legitimately be absent; note and move on.
+                r.Note(Loc.T("Fetch.SkippedOptional", artifact.Source, ex.Message));
             }
         }
 
-        r.Note(Loc.T("Fetch.DownloadedCount", $"{total / 1024 / 1024.0:F1}", done, Payload.Length));
-    }
-
-    /// <summary>
-    /// Checks a staged payload. Required files must exist; every DLL must be signed by the project,
-    /// and on a non-official source the signer must match the pinned certificate.
-    /// </summary>
-    private static (bool Accepted, string Message) Verify(string staging, bool officialSource)
-    {
-        var missing = Payload.Where(a => a.Required && !File.Exists(Path.Combine(staging, a.SourcePath)))
-                             .Select(a => a.SourcePath)
-                             .ToList();
-        if (missing.Count > 0)
-            return (false, Loc.T("Fetch.Incomplete", Loc.Join(missing)));
-        if (ModSource.SuperResolutionFiles.Count(p => File.Exists(Path.Combine(staging, p))) == 1)
-            return (false, Loc.T("Manage.NeedFullPackage"));
-
-        var pinMismatch = new List<string>();
-        var unsigned = new List<string>();
-
-        foreach (var artifact in Payload.Where(a => a.NeedsSignature))
-        {
-            var path = Path.Combine(staging, artifact.SourcePath);
-            if (!File.Exists(path)) continue;
-
-            // X509Certificate2 is needed for Thumbprint; the static loader returns the base type.
-            var cert = DeploymentService.ReadSignerCertificate(path, out var intact, requireTrusted: artifact.Nvidia);
-            using (cert)
-            {
-                var subject = cert?.Subject ?? "";
-                var expected = artifact.Nvidia ? "NVIDIA Corporation" : ExpectedSignerSubject;
-                if (!intact || !subject.Contains(expected, StringComparison.OrdinalIgnoreCase))
-                    unsigned.Add(Path.GetFileName(artifact.SourcePath));
-                else if (!artifact.Nvidia && !PinnedCertThumbprints.Contains(cert!.Thumbprint, StringComparer.OrdinalIgnoreCase))
-                    pinMismatch.Add(Path.GetFileName(artifact.SourcePath));
-            }
-        }
-
-        if (unsigned.Count > 0)
-            return (false, Loc.T("Fetch.Unsigned", Loc.Join(unsigned)));
-
-        if (pinMismatch.Count > 0)
-        {
-            var detail = Loc.T("Fetch.PinDetail", Loc.Join(pinMismatch));
-
-            // A mirror is not the authority for this content, so an unexpected signer is rejected.
-            if (!officialSource)
-                return (false, Loc.T("Fetch.PinMismatch", detail));
-
-            // GitHub itself is trusted; a different certificate most likely means upstream re-signed.
-            AppPaths.Log(Loc.T("Fetch.PinWarning", detail));
-            return (true, Loc.T("Fetch.PinAccepted", Loc.Join(pinMismatch)));
-        }
-
-        return (true, Loc.T("Fetch.SignatureOk"));
-    }
-
-    /// <summary>
-    /// Copies the verified payload from the staging folder into the mod folder.
-    ///
-    /// Staging mirrors the repository layout; the destination maps each file to the manager's own layout,
-    /// which is why the two paths are configured separately on <see cref="Artifact"/>.
-    /// </summary>
-    private static int Publish(string staging, string destination)
-    {
-        var copied = 0;
-
-        foreach (var artifact in Payload)
-        {
-            var source = Path.Combine(staging, artifact.SourcePath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(source))
-            {
-                // Do not mix old SR files with a new frame-generation-only download.
-                if (ModSource.SuperResolutionFiles.Contains(artifact.DestinationPath))
-                {
-                    var stale = Path.Combine(destination, artifact.DestinationPath);
-                    if (File.Exists(stale)) File.Delete(stale);
-                }
-                continue;
-            }
-
-            CopyInto(source, Path.Combine(destination, artifact.DestinationPath.Replace('/', Path.DirectorySeparatorChar)), destination);
-            copied++;
-        }
-
-        return copied;
-    }
-
-    /// <summary>
-    /// Removes proxy DLLs left over from an earlier release that the current payload no longer ships.
-    ///
-    /// 0.3.0 dropped winhttp.dll, and a stale file would sit in the mod folder looking like an entry the
-    /// user added themselves — while pairing a previous generation's build with the new INI, which is a
-    /// combination neither generation supports. Only files carrying the project's own signature are
-    /// removed, so anything the user brought along survives whatever its name.
-    /// </summary>
-    private static void PruneSupersededEntries(string destination, OpResult r)
-    {
-        var shipped = Payload
-            .Select(a => Path.GetFileName(a.DestinationPath))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var name in ModSource.KnownProxyNames)
-        {
-            if (shipped.Contains(name)) continue;
-
-            var path = ModSource.ResolveDllPath(destination, name);
-            if (!File.Exists(path) || !DeploymentService.IsProjectSigned(path)) continue;
-
-            try
-            {
-                File.Delete(path);
-                r.Note(Loc.T("Fetch.PrunedStale", name));
-            }
-            catch (Exception ex)
-            {
-                AppPaths.Log("清理旧入口失败（" + name + "）: " + ex.Message);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Records which release the payload came from, for the interface badge and the log.
-    ///
-    /// The shipped INI stopped carrying a version banner in 0.3.0, so a release label cannot be read off
-    /// the files themselves any more. Best effort: failing to write the label must never fail a download
-    /// that already succeeded.
-    /// </summary>
-    private static void TryWriteVersionMarker(string destination, string label)
-    {
-        try
-        {
-            File.WriteAllText(Path.Combine(destination, VersionMarkerName), label, new System.Text.UTF8Encoding(false));
-        }
-        catch (Exception ex)
-        {
-            AppPaths.Log("写入版本标记失败: " + ex.Message);
-        }
-    }
-
-    /// <summary>Rejects any path that would escape the destination folder.</summary>
-    private static void CopyInto(string sourceFile, string destinationFile, string destinationRoot)
-    {
-        var rootFull = Path.GetFullPath(destinationRoot).TrimEnd('\\') + "\\";
-        var destFull = Path.GetFullPath(destinationFile);
-        if (!destFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(Loc.T("Fetch.EscapeAttempt"));
-
-        var dir = Path.GetDirectoryName(destFull);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.Copy(sourceFile, destFull, overwrite: true);
-        DeploymentService.Unblock(destFull);
+        r.Note(Loc.T("Fetch.DownloadedCount", $"{total / 1024 / 1024.0:F1}", done, files.Length));
     }
 
     private static void TryDelete(string file)

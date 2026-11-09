@@ -25,6 +25,12 @@ public static class DeployPlanner
             return PlanOutcome.Failure(Loc.T("Deploy.SourceUnavailable", source.ValidationMessage, hint));
         }
 
+        // A payload from a known release must still be exactly that release: the mod folder is
+        // user-writable, and these files are about to be loaded into a game.
+        var manifest = PayloadCatalog.Find(source.Version);
+        if (manifest is not null && PayloadVerifier.CheckInstalled(source.Root, manifest) is { } tampered)
+            return PlanOutcome.Failure(Loc.T("Deploy.PayloadTampered", manifest.Version, tampered));
+
         var configurationError = source.ConfigurationError(game.Profile);
         if (configurationError is not null || source.RuntimeModel != BuildCatalog.Normalize(game.Profile.RuntimeModel))
             return PlanOutcome.Failure(configurationError ?? Loc.T("Manage.BuildMismatch"));

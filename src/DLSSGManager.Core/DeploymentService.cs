@@ -262,20 +262,29 @@ public static partial class DeploymentService
     }
 
     /// <summary>
-    /// True when the file is provably this project's: either it carries a pinned project signature,
-    /// or it matches the hash recorded when we wrote it.
+    /// True when the file is provably this project's, by its bytes first:
+    /// <list type="number">
+    /// <item>it matches the hash recorded when we wrote it, or</item>
+    /// <item>it is byte-for-byte a project build listed in a known release manifest
+    /// (<see cref="PayloadCatalog.IsProjectBuild"/>), or</item>
+    /// <item>it carries an intact pinned project signature — kept for releases older than the
+    /// manifests, whose hashes the manager never recorded.</item>
+    /// </list>
+    /// NVIDIA's runtime files are never matched by catalog or signature: games ship them too, so only a
+    /// recorded hash proves the manager put one there.
     /// </summary>
     public static bool IsOurs(string path, string? recordedHash)
     {
         if (!File.Exists(path)) return false;
-        if (IsProjectSigned(path)) return true;
-        if (!string.IsNullOrEmpty(recordedHash))
-        {
-            try { return string.Equals(Sha256(path), recordedHash, StringComparison.OrdinalIgnoreCase); }
-            catch { return false; }
-        }
 
-        return false;
+        string hash;
+        try { hash = Sha256(path); }
+        catch { return false; }
+
+        if (!string.IsNullOrEmpty(recordedHash) && string.Equals(hash, recordedHash, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (PayloadCatalog.IsProjectBuild(hash)) return true;
+        return IsProjectSigned(path);
     }
 
     /// <summary>
@@ -411,7 +420,7 @@ public static partial class DeploymentService
             // the project's self-signed files are identified by pinned thumbprint only.
             var recognised = nvidia
                 ? intact && cert?.Subject.Contains("NVIDIA Corporation", StringComparison.OrdinalIgnoreCase) == true
-                : ProjectSigning.IsProjectSignature(cert, intact);
+                : PayloadCatalog.IsProjectBuild(Sha256(path)) || ProjectSigning.IsProjectSignature(cert, intact);
             if (recognised)
                 deployment.Files.Add(new DeployedFile { FileName = name, Sha256 = Sha256(path), Size = new FileInfo(path).Length });
         }
@@ -567,6 +576,15 @@ public static partial class DeploymentService
             {
                 // An unreadable file falls through to the checks below, which will also fail.
             }
+        }
+
+        try
+        {
+            if (File.Exists(path) && PayloadCatalog.IsProjectBuild(Sha256(path))) return true;
+        }
+        catch
+        {
+            // Unreadable: the signature check below fails the same way.
         }
 
         return ModFetcher.IsKnownCommunityBuild(path) || IsProjectSigned(path);

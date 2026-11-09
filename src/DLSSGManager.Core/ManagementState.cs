@@ -57,8 +57,13 @@ public static class BuildCatalog
     public const string Conservative = "310.1";
     public const string Marker = ".manager-build";
     public static string Normalize(string? value) => value == Conservative ? Conservative : Default;
+    /// <summary>
+    /// The folder holding the payload to deploy from: the active release under a versioned mod root
+    /// (<see cref="ModStore"/>), or the root itself for the older flat layout. Downloads go to the
+    /// root, never here.
+    /// </summary>
     public static string SourceDirectory(string root, string build) => Normalize(build) == Default
-        ? root : Path.Combine(root, "variants", Conservative);
+        ? ModStore.ActiveDirectory(root) : Path.Combine(root, "variants", Conservative);
     public static string RemotePath(string path, string build) => Normalize(build) == Conservative &&
         path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? Conservative + "/" + path : path;
     public static string? ConfigurationError(GameProfile profile) => profile.RuntimeModel == Conservative &&
