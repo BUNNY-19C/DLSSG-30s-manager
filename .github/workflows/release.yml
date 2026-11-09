@@ -54,11 +54,20 @@ jobs:
             -c Release -p:PublishProfile=Portable `
             -p:Version=${{ steps.version.outputs.value }} `
             --nologo
+          # 命令行版：同一套核心代码，供脚本与批量操作使用。
+          dotnet publish src/DLSSGManager.Cli/DLSSGManager.Cli.csproj `
+            -c Release -p:PublishProfile=Portable `
+            -p:Version=${{ steps.version.outputs.value }} `
+            --nologo
+
+      - name: 冒烟测试发布产物
+        shell: pwsh
+        run: ./tests/smoke/cli-smoke.ps1 -Cli publish/dlssgm.exe
 
       - name: 生成校验值
         shell: pwsh
         run: |
-          $files = @('publish/DLSSGManager.exe')
+          $files = @('publish/DLSSGManager.exe', 'publish/dlssgm.exe')
 
           $lines = foreach ($f in $files) {
             $hash = (Get-FileHash $f -Algorithm SHA256).Hash
@@ -77,6 +86,7 @@ jobs:
           name: DLSSGManager-${{ steps.version.outputs.value }}
           path: |
             publish/DLSSGManager.exe
+            publish/dlssgm.exe
             publish/SHA256SUMS.txt
 
       - name: 创建 Release
@@ -85,6 +95,7 @@ jobs:
         with:
           files: |
             publish/DLSSGManager.exe
+            publish/dlssgm.exe
             publish/SHA256SUMS.txt
           name: ${{ github.ref_name }}
           body_path: docs/RELEASE-NOTES.md

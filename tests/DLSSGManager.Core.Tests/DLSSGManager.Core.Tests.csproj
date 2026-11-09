@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DLSSGManager.Core\DLSSGManager.Core.csproj" />
+    <ProjectReference Include="..\..\src\DLSSGManager.Cli\DLSSGManager.Cli.csproj" />
   </ItemGroup>
 
 </Project>

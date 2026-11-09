@@ -13,6 +13,7 @@
   - MVVM 拆分：GameManagementViewModel / BatchViewModel / ProtectionViewModel + IBatchHost 接口
 - 改进范围：见 [UI 落地清单](UI-IMPROVEMENTS.md)。
 - 仓库：`github.com/BUNNY-19C/DLSSG-30s-manager`，打 tag 即发版
+- **核心拆分重构（`refactor/core-split` 分支）**：.NET 10；领域代码移入 `DLSSGManager.Core`；部署拆为"计划 → 执行"；版本清单按哈希校验下载与判定归属；Mod 按版本存放；最小权限提权；崩溃恢复日志；命令行 `dlssgm`；135+ 测试与 CI 冒烟测试。下面第 3、4.3、4.6 节已按新结构改写。
 
 ---
 
@@ -32,15 +33,17 @@
 ## 2. 五分钟上手
 
 ```bash
-# 构建（需要 .NET 8 SDK）
-dotnet build src/DLSSGManager/DLSSGManager.csproj -c Debug
+# 构建与测试（需要 .NET 10 SDK，版本见 global.json）
+dotnet build
+dotnet test
 
-# 下载 Mod 文件，使用程序自身的下载入口
-dotnet run --project src/DLSSGManager -c Debug -- --fetch --silent
+# 下载 Mod 文件（命令行版；数据目录与界面版共用）
+dotnet run --project src/DLSSGManager.Cli -- fetch
+dotnet run --project src/DLSSGManager.Cli -- verify      # 按版本清单逐文件核对
 
 # 构建免安装绿色版（自带 .NET）
 dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile=Portable
-
+dotnet publish src/DLSSGManager.Cli/DLSSGManager.Cli.csproj -c Release -p:PublishProfile=Portable
 ```
 
 **发版流程**：`git tag v1.9.4 && git push origin main --tags` → GitHub Actions（`.github/workflows/release.yml`）自动构建绿色版与 SHA256SUMS 并挂到 Release。工作流会把 tag 号通过 `-p:Version` 注入程序集，所以界面里的版本徽章自动正确。
@@ -52,42 +55,44 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj -c Release -p:PublishProfile
 ## 3. 代码地图
 
 ```
-src/DLSSGManager/
-├─ DeploymentService.cs 1087 部署/恢复/接管/状态判定——唯一写游戏目录的地方
-├─ MainWindow.xaml      1055 界面布局（顶栏/信息条/侧边栏/卡片详情/进度条/日志条）
-├─ ModFetcher.cs        1280 下载：多源链+SourceForge、并发测速、暂停/跳过门、断点续传、完整/基础包、离线导入
-├─ MainWindow.xaml.cs   710  窗口装配、主题/语言切换、游戏列表筛选、视图模型绑定
-├─ Gpu.cs               548  显卡探测、架构判定、注册表显示名读写、INF 间接字符串解析
-├─ Strings.zh/en.cs     534  两张字符串表（必须逐键对齐）
-├─ MainWindow.Actions.cs 432 部署/恢复单个游戏/扫描/路径选择/打开与启动处理器
-├─ SourcePickerDialog   420  下载源选择：包类型、测速结果、拖拽导入、进度面板（暂停/跳过/取消）
-├─ Models.cs            343  GameEntry / GameProfile / DeploymentInfo / AppData
-├─ ModSource.cs         315  本地负载：入口名、0.4.0 运行目录、配置约束、导入自定义代理
-├─ Store.cs             309  library.json 读写与归一化、INI 模板按节渲染
-├─ Detection.cs         283  游戏发现：双标记扫描、渲染目录解析、主程序挑选
-├─ AntiCheat.cs         281  内核级反作弊识别、隔离副本查找
-├─ Shell.cs             231  打开目录/文件、启动游戏、提权重启
-├─ ModSourceLocator.cs  191  负载目录解析（仓库检出 / 便携 / 用户目录）
-├─ MainWindow.Management.cs 200  保存状态（未保存/待应用/已应用）与关闭流程
-├─ Localization.cs      220  Loc.T、LocalizedText 延迟本地化消息、Choice<T> / LocalizedString
-├─ ViewModels/
-│  ├─ GameManagementViewModel.cs  180 单游戏配置状态、保存/应用按钮、构建警告
-│  ├─ BatchViewModel.cs            160 批量操作：勾选集、部署/恢复命令、结果面板
-│  └─ ProtectionViewModel.cs       90  反作弊横幅、部署工具提示、批量通知
-├─ MainWindow.Batch.cs  40   IBatchHost 实现（批量操作宿主接口）
-├─ MainWindow.Protection.cs 100  添加目录时立即提示内核级反作弊
-├─ Theme.cs / ThemeKeys.cs   主题系统：跟随 Windows ("system" 偏好 + 注册表读取)
-├─ App.xaml / App.xaml.cs    启动、--fetch 命令行下载、LocalizedString 数据模板
-├─ ManagementState.cs   100  配置快照（见 4.10）、运行库构建约束
-├─ GpuNameDialog        显卡显示名编辑
-├─ 其余工具：Native、OutputLog、Converters、Palette、Version、TrExtension
-└─ Themes/Dark.xaml + Light.xaml   两套主题字典（键必须完全一致）
+src/DLSSGManager.Core/              领域层（net10.0-windows，无 WPF）
+├─ Deploy/
+│  ├─ DeployPlanner.cs      读取游戏目录与记录，产出 DeployPlan；所有归属判定都在这里，不写任何文件
+│  ├─ PlanExecutor.cs       唯一写游戏目录的代码：执行计划、构建部署记录、路径与链接校验、哈希复核
+│  ├─ DeployPlan.cs         计划与步骤类型（可 JSON 序列化，供提权进程与崩溃日志使用）
+│  ├─ FilePlanJournal.cs    预写日志 + PlanRecovery（中断的部署回滚、中断的恢复补完）
+│  └─ DeploymentService.Operations.cs  Deploy/Restore 入口（同步版与带提权的异步版）
+├─ DeploymentService.cs     归属判定原语（IsOurs / 签名 / 哈希）、状态检查 Evaluate、手工安装接管
+├─ Payload/
+│  ├─ Manifests/*.json      各上游版本的逐文件清单（大小、SHA-256、签名者、所属包），嵌入程序集
+│  ├─ PayloadManifest.cs    清单模型与 PayloadCatalog
+│  ├─ PayloadVerifier.cs    按清单校验暂存负载、发布到版本目录、核对已安装负载
+│  └─ ModStore.cs           mod/versions/<版本> + current.json：原子切换、保留上一版、迁移旧布局
+├─ Fetch/
+│  ├─ DownloadSources.cs    下载源目录、选择与测速排序
+│  ├─ PayloadHttp.cs        IHttpClientFactory + Resilience 管道
+│  ├─ DownloadPolicy.cs     主机白名单 + 连接时地址校验（ConnectCallback）
+│  ├─ HttpTransfer.cs       流式传输、重定向复检、上限、停顿检测、断点续传
+│  ├─ ArchiveExtractor.cs   防穿越/防炸弹解压
+│  └─ DownloadGate.cs       暂停/跳过
+├─ ModFetcher.cs            下载编排（只协调上面各部分）
+├─ Elevation/               提权：协议与校验、提权进程处理器、发起方
+├─ ProjectSigning.cs        项目证书指纹
+├─ Store.cs                 library.json（备份轮转、损坏隔离、只读保护）与 INI 渲染
+├─ Models / ModSource / ModSourceLocator / Detection / AntiCheat / Gpu / Shell / Localization / Strings.*
 
-mod/                          下载得到的上游负载，不入库
-test/DLSSGManager.Tests/      xUnit 测试项目（INI 渲染、配置快照、负载识别、部署往返）
+src/DLSSGManager/                   WPF 界面（引用 Core）
+├─ MainWindow.*.cs / ViewModels/    界面与视图模型；部署/恢复只调用 DeploymentService.DeployAsync/RestoreAsync
+└─ App.xaml.cs                      启动；--fetch；--elevated <pipe> 提权助手模式（无窗口）
+
+src/DLSSGManager.Cli/               命令行 dlssgm（list/add/status/deploy/restore/fetch/import/verify/recover）
+
+tests/DLSSGManager.Core.Tests/      xUnit：部署往返、归属判定、计划、清单、下载、崩溃恢复、提权协议、CLI
+tests/smoke/cli-smoke.ps1           对构建产物做端到端冒烟测试（CI 与发版都会跑）
+mod/                                下载得到的上游负载，不入库
 ```
 
-**分层原则**：模型与领域层（Models / Gpu / Detection / DeploymentService / ModFetcher / AntiCheat / Store）**不得引用 WPF 类型**，界面依赖集中在窗口、展示层与视图模型。视图模型（ViewModels/）持有界面状态但不直接操作控件，通过接口（如 IBatchHost）回调窗口。
+**分层原则**：`DLSSGManager.Core` **不得引用 WPF 类型**。界面层不直接写游戏目录：所有写入都走 Planner → Executor，需要管理员权限时由提权助手执行同一份计划。
 
 ---
 
@@ -120,11 +125,16 @@ test/DLSSGManager.Tests/      xUnit 测试项目（INI 渲染、配置快照、�
 
 ### 4.3 部署所有权判定（数据安全的底线）
 
-恢复时"删除"必须能证明文件是本项目的，判据三层：
+恢复时"删除"、部署时"不备份就覆盖"，都必须能证明文件是本项目的。判据按顺序（`DeploymentService.IsOurs`）：
 
 1. 记录里的 SHA-256（`DeploymentInfo.Files`）
-2. 已知社区构建哈希（`ModFetcher.KnownCommunityBuildHashes`）
-3. 项目 Authenticode 签名（`IsProjectSigned`，走 WinVerifyTrust + 证书主题匹配）
+2. 已知版本清单里的项目构建（`PayloadCatalog.IsProjectBuild`，按字节判定）
+3. 已知社区构建哈希（`ModFetcher.KnownCommunityBuildHashes`）
+4. 项目 Authenticode 签名——WinVerifyTrust 确认完整，**且证书指纹在 `ProjectSigning.PinnedThumbprints` 中**。只用于清单出现之前的旧版本。
+
+**不要用证书名称判定归属**：任何人都能自签 `CN=DLSSG`。旧版正是这样判定的，会把冒名 DLL 当成自己的覆盖或删除。NVIDIA 签名的运行时文件只认记录哈希——游戏自己也带这些文件。
+
+**两段式写入**：`DeployPlanner` 只读，产出每一步；`PlanExecutor` 执行时再复核两件事——删除前文件哈希仍是计划时判定的值；写入的副本哈希等于计划时 Mod 文件的哈希。两次检查之间文件被换掉，就停止，不会误删或装错。
 
 **备份必须结转**：重新部署会重建 `DeploymentInfo`，若不把 `prev.Backups` 带过来，第一次部署置换的外部文件（别人的 INI）就永远回不来了。
 
@@ -142,23 +152,17 @@ test/DLSSGManager.Tests/      xUnit 测试项目（INI 渲染、配置快照、�
 
 ### 4.6 下载安全模型（ModFetcher）
 
-威胁模型是"镜像不可信"：
+威胁模型是"**任何来源都不可信，只认内容**"：
 
-1. 仅 HTTPS + **主机白名单**，且解析结果必须全为公网地址
-2. **代理感知**：检测到系统代理时跳过本机 DNS 校验——否则 DNS 污染/hosts 加速的用户会被全部源拒绝（issue #1 的真实原因）
-3. 重定向逐跳复检、响应体积上限、归档条目不得逃逸目标目录
-4. 载荷校验：所有 DLL 必须带项目签名；**镜像源**还必须匹配证书 pin（`85BA6676…`；GitHub 官方端点不匹配只记警告，容忍上游换证书）
-5. **校验通过前不写 mod 目录**——所以取消/失败都不会破坏已有负载
+1. 仅 HTTPS + **主机白名单**；重定向逐跳复检（最多 5 跳）。
+2. **连接时校验地址**（`DownloadPolicy.ConnectAsync`）：自己解析 DNS，只连公网地址，且连的就是校验过的地址。连向用户配置的系统代理（例如 Clash 的 127.0.0.1:7897）放行，其他本地端口拒绝。旧版在发请求前单独解析一次，有检查/使用时间差，开代理时还整个跳过。
+3. 响应体积上限（逐文件按清单大小封顶）、解压上限 1 GB / 4096 条目、条目不得逃逸目录或使用备用数据流。
+4. **按版本清单逐字节校验**（`PayloadVerifier`）：每个文件的大小和 SHA-256 必须与 `Payload/Manifests/<版本>.json` 一致，GitHub 官方源也一样——tag 和 Release 附件都可以被替换。项目 DLL 额外校验签名（指纹固定）。文档类文件（README）只复制、不校验：Release 包里的 README 与仓库同 tag 的不同，且它们从不部署。
+5. **安装是原子的**（`ModStore`）：在 `mod/versions/` 下的临时目录组装，完整后才改名到位并切换 `current.json`。失败或取消不影响正在使用的版本；上一版保留，可以回退。
 
-**v1.12.0 下载架构重构**：
-- **多源支持**：GitHub Release 资产重定向 + SourceForge 镜像（7 个源）；自动添加 `dl_source=zc` 标签用于上游流量分析。
-- **并发测速**：`ProbeSourcesAsync` 并发 GET 前 16KB，按延迟与吞吐量排序（HEAD 测不出真实速度）。
-- **暂停/跳过/取消**：`DownloadGate` 协调暂停门（await `PausedEvent`）+ 每源跳过标志（`_skipCurrent`）+ 整体取消令牌。
-- **断点续传**：Range 请求 + 停顿检测（5 秒无进度自动重试当前块）+ RangeNotSatisfiable 处理。
-- **完整包 / 基础包**：`PayloadPackage.Full` 含超分内核（~90MB），`Base` 仅帧生成（~46MB）；用户可在 `SourcePickerDialog` 选择。
-- **离线导入**：`ImportArchiveAsync` 支持拖拽 .zip 或浏览文件，解压至临时目录并按完整包/基础包验证签名，匹配后移入 `mod/`。
-- **安全解压**：条目数上限 500、单条目 200MB、总大小 300MB，自动展平单目录包装层（archive-wrapper flattening）。
-- **TransferAsync 辅助方法**：统一 Range 请求、进度回调、速度计算（`IProgress<FetchProgress>`），供下载与测速共用。
+重试与超时由 `PayloadHttp` 的 Resilience 管道负责（瞬时错误带抖动退避）；已收到响应头后连接中断，由 `HttpTransfer` 从已下载的字节处续传。测速请求不重试。
+
+真实网络测试默认关闭：设置 `DLSSGMANAGER_LIVE_TESTS=1` 后会经由生产代码栈从 GitHub 下载并校验。
 
 **SourcePickerDialog 新对话框**（替代主窗口嵌入式面板）：
 - 包类型选择（完整/基础）+ 构建目录选择（310.9 / 310.1）
@@ -227,9 +231,9 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 
 | 项目 | 代码位置 | 变了要改 |
 |---|---|---|
-| 下载路径 | `ModFetcher.Payload` | 上游挪目录（如 0.3.0 的 `altnative/`→`alternatives/`）只改这张表 |
+| 文件清单 | `Payload/Manifests/<版本>.json` | **每个新版本都要加**：用官方发布包逐个算大小与 SHA-256（`source` 是上游路径，`destination` 是本地布局）；改 `ModFetcher.SupportedRelease`。布局与 INI 不变时只需这一步 |
 | 入口名 | `ModSource.ProxyCandidates` / `KnownProxyNames` | 新增/删除代理名 |
-| 证书 pin | `ModFetcher.PinnedCertThumbprint` | 上游换证书（镜像源会直接拒绝） |
+| 证书指纹 | `ProjectSigning.PinnedThumbprints` | 上游换证书时追加（旧指纹保留，用于识别旧安装） |
 | 版本探测 | `ModSource.ReadVersionFromText` / `ModFetcher.ReadVersionFromReadme` | 横幅/标题格式变化 |
 | INI 键 | `IniTemplate.Values` | 新键需要界面控件 |
 | 默认值 | `GameProfile` 字段默认值 | 上游调默认（0.3.3 把倍率默认从 5 调到 3） |
@@ -241,7 +245,7 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 ## 6. 开发环境陷阱
 
 1. **Mimosa hook 拒绝 Bash 写 .cs**：所有 C#/XAML 改动必须用 Write/Edit 工具（hook 会在提交前做安全扫描）。
-2. **.NET 8 SDK 会把 commit hash 拼进 `InformationalVersion`**（`1.9.3+abc1234`），界面只取 `+` 前的部分。
+2. **.NET SDK 会把 commit hash 拼进 `InformationalVersion`**（`1.9.3+abc1234`），界面只取 `+` 前的部分。
 3. **`ModSource` 是构造时快照**：导入自定义代理后必须重建实例才能看到新入口。
 4. **`Stopwatch.GetTimestamp` 与 `TimeSpan` 不能混算**，用 `Stopwatch.GetElapsedTime()`。
 5. **本地代理（Clash）抖动会导致 push 失败**——`git push` 报 443 连接失败时，提交和 tag 是安全的，稍后重试即可（Git 配置里 http.proxy 指向 127.0.0.1:7897）。
@@ -257,7 +261,7 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
    - `ExtractArchive` 限制了条目数（500）、单条目大小（200MB）、总解压量（300MB），防止 zip 炸弹（v1.12.0 已实现）。
    - 保存失败与关闭保护已落地：Save 返回结果；UI 保留内存记录和重试提示，批量保存失败停止后续项；Closing 等待操作完成或取消下载后退出。此流程不覆盖强制结束进程或断电。
 3. **反作弊规则表**与 GPU 设备 ID 区间是经验数据，遇到误判按实际游戏样本增补。
-4. **测试覆盖**：`test/DLSSGManager.Tests` 包含 7 个最小测试用例（INI 按节渲染、配置快照、310.1 构建规则、负载识别、部署还原往返、下载源策略），但缺少 UI 自动化测试与集成测试。主窗口拆分为 5 个分部类（xaml.cs / Actions / Management / Batch / Protection），视图模型引入后可单独测试命令逻辑，但尚未编写 ViewModel 单元测试。
+4. **测试覆盖**：`tests/DLSSGManager.Core.Tests` 覆盖 Core 与命令行（部署往返、归属判定、计划、清单与下载校验、断点续传、崩溃恢复、提权协议、库文件恢复、CLI），`tests/smoke/cli-smoke.ps1` 对构建产物做端到端检查，CI 与发版都会跑。未覆盖：WPF 界面与视图模型（有意不做界面自动化）、真正经过 UAC 的提权（需要人工点确认，提权处理器本身已经通过命名管道测过）。
 
 ---
 

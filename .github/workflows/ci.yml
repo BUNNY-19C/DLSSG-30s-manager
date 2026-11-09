@@ -1,11 +1,17 @@
 name: CI
 
-# Every push and pull request: build everything and run the test suite. Release publishing lives in
-# release.yml and runs the same tests before it uploads anything.
+# Every push and pull request: build everything, run the test suite, and smoke-test the command line
+# against a real folder. Release publishing lives in release.yml and runs the same tests first.
 on:
   push:
     branches: ['**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: 'Also run the live network tests and a real-payload smoke test (downloads from GitHub)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,11 +32,27 @@ jobs:
 
       - name: 测试
         shell: pwsh
-        run: dotnet test -c Release --no-build --nologo --logger "trx;LogFileName=results.trx"
+        env:
+          DLSSGMANAGER_LIVE_TESTS: ${{ inputs.live && '1' || '' }}
+        run: dotnet test -c Release --no-build --nologo --blame-hang-timeout 120s --logger "trx;LogFileName=results.trx"
+
+      - name: 命令行冒烟测试（合成负载）
+        shell: pwsh
+        run: ./tests/smoke/cli-smoke.ps1 -Cli src/DLSSGManager.Cli/bin/Release/net10.0-windows/dlssgm.exe
+
+      - name: 命令行冒烟测试（真实 0.4.1 负载）
+        if: ${{ inputs.live }}
+        shell: pwsh
+        run: |
+          $cli = 'src/DLSSGManager.Cli/bin/Release/net10.0-windows/dlssgm.exe'
+          $mod = Join-Path $env:RUNNER_TEMP 'mod'
+          & $cli fetch --mod $mod --source raw --package base
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tests/smoke/cli-smoke.ps1 -Cli $cli -Payload $mod
 
       - name: 上传测试结果
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: '**/TestResults/*.trx'
+          path: '**/TestResults/**'

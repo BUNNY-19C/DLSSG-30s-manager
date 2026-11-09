@@ -12,7 +12,11 @@ public static class AppPaths
     /// </summary>
     public const string RootOverrideVariable = "DLSSGMANAGER_HOME";
 
-    public static string Root { get; } = ResolveRoot();
+    /// <summary>
+    /// Resolved on every read, so a process that sets <see cref="RootOverrideVariable"/> after start-up
+    /// (the elevated helper, which receives the folder from the manager) uses it from then on.
+    /// </summary>
+    public static string Root => ResolveRoot();
 
     private static string ResolveRoot()
     {
