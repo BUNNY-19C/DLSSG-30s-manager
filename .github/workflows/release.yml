@@ -80,6 +80,14 @@ jobs:
             "{0}: {1:N1} MB" -f (Split-Path $f -Leaf), ((Get-Item $f).Length / 1MB) | Write-Output
           }
 
+      - name: 提取本版本说明
+        shell: pwsh
+        run: |
+          # RELEASE-NOTES.md 按 "---" 分节，最新版本在最前；只取第一节作为 Release 正文。
+          $text = Get-Content docs/RELEASE-NOTES.md -Raw -Encoding utf8
+          $section = ($text -split '(?m)^---\s*$')[0].Trim()
+          Set-Content publish/RELEASE-BODY.md $section -Encoding utf8
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -98,5 +106,5 @@ jobs:
             publish/dlssgm.exe
             publish/SHA256SUMS.txt
           name: ${{ github.ref_name }}
-          body_path: docs/RELEASE-NOTES.md
+          body_path: publish/RELEASE-BODY.md
 

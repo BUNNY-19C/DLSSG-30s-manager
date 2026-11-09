@@ -4,7 +4,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.12.0</Version>
+    <Version>1.13.0</Version>
     <Authors>BUNNY-19C</Authors>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>

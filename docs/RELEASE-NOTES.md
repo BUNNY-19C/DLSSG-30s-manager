@@ -1,3 +1,30 @@
+## v1.13.0：更安全的部署与恢复、命令行版
+
+这一版重写了管理器的核心，界面和使用方式基本不变。重点是：在任何情况下都不误删、不误改你游戏目录里的文件。
+
+- **修复：冒名文件可能被当成本项目的文件。** 旧版只看签名证书的名字里有没有 "DLSSG"，别人自签同名证书的 DLL 会被直接覆盖（不备份）或在恢复时被删除。现在按文件内容（SHA-256）和证书指纹判定。
+- **修复：游戏库文件损坏时，部署记录会被清空。** 旧版读不了 `library.json` 时会用空库覆盖它，之后就无法恢复已部署的游戏。现在会把损坏的文件另存、自动载入上一份备份（`library.json.bak`），并弹窗说明。
+- **下载按版本清单逐文件校验。** 每个文件的大小和哈希都必须与 0.4.1 发布版完全一致，GitHub 官方源和镜像一视同仁，配置模板也在校验范围内。
+- **Mod 按版本存放。** 新版本下载到 `mod\versions\<版本>\`，完整校验后才切换过去；下载失败或取消不会影响正在用的版本，上一版会保留以便回退。原来的 Mod 文件会在下次更新时自动整理进去。
+- **只在需要时提权。** 游戏目录需要管理员权限时，会询问是否只为这一次操作提权，不再需要以管理员身份重启整个管理器。
+- **断电、强退后自动收尾。** 部署或恢复进行到一半被中断，下次启动时会自动撤销未完成的部署、补完未完成的恢复。
+- **恢复更可靠。** 被改动过的备份不会被放回；手动安装的社区版代理在单代理部署前会先备份，恢复时放回。
+- **下载更稳。** 瞬时网络错误自动重试；使用系统代理（如 Clash）时连接校验仍然有效。
+- **新增命令行版 `dlssgm.exe`。** 可脚本化地列出、添加、检查、部署、恢复游戏，下载、导入、核对 Mod 文件，与界面版共用同一游戏库。
+- **运行时升级到 .NET 10**（.NET 8 已于 2026-11-10 停止支持）。绿色版仍是自包含单文件，无需另装 .NET。
+
+### 升级说明
+
+直接替换 `DLSSGManager.exe` 即可，游戏库、恢复备份和已部署的游戏都继续有效。首次下载或导入 Mod 时，原 `mod\` 目录中的载荷文件会被整理进 `mod\versions\`，你放在那里的其他文件保持不动。
+
+### English
+
+The core was rewritten so the manager never removes or overwrites files it cannot prove it wrote. Ownership is now decided by file hash and pinned certificate thumbprint (previously by certificate name, which anyone can forge). An unreadable game library is set aside and the previous backup is loaded instead of being replaced by an empty one. Downloads are verified file-by-file against the 0.4.1 release manifest from every source, and each release installs into its own `mod\versions\<version>` folder, switched in only when complete. Administrator rights are requested for a single operation instead of restarting the whole manager elevated. Interrupted deployments are rolled back and interrupted restores completed on the next start. A command-line tool, `dlssgm.exe`, shares the same library. The runtime moves to .NET 10; the portable build remains a single self-contained executable.
+
+**完整改动 / Full changelog:** https://github.com/BUNNY-19C/DLSSG-30s-manager/compare/v1.12.0...v1.13.0
+
+---
+
 ## v1.12.0：适配上游 0.4.1
 
 - 移除已过时的游戏适配提示、自动名称匹配和前置文件检查，清理对应的文档与翻译。旧游戏库中的提示选择字段仍可读取并忽略。

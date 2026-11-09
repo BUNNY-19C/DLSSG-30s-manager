@@ -16,7 +16,9 @@ Primarily intended for **RTX 30-series GPUs**, with hardware testing by the main
 - **Portable single executable**: download it, place it in a writable folder and run it.
 - **Multiple download sources and offline import**: automatically compare source speeds, pause or resume downloads, skip the current source, or drag an upstream ZIP into the window to import local Mod files offline.
 - **Per-game configuration**: save frame-generation multipliers, optimization tiers and advanced settings separately for each game, including proxy entry, preset, log level and per-frame GPU timing.
-- **Automatic adoption and restoration**: status checks adopt recognized manual installations, including supported community proxies. Restore verifies file ownership using project signatures and recorded hashes, restores original configuration backups and keeps unknown files.
+- **Automatic adoption and restoration**: status checks adopt recognized manual installations, including supported community proxies. Restore verifies file ownership by file hash and pinned-thumbprint project signatures, restores original configuration backups and keeps unknown files. Operations cut short by a crash or power loss are finished or undone on the next start.
+- **Verified Mod downloads**: from any source, every file must match the release manifest's hash before it is used; each release lives in its own folder and the previous one is kept for rollback.
+- **Elevation on demand**: when a game folder needs administrator rights, only that one operation is elevated; the manager itself never runs as administrator.
 - **Batch management and upgrades**: combine search and status filters with batch deployment, batch restore and failed-item retries. Upgrades from 0.3.x to 0.4.0 remove redundant legacy proxies whose ownership can be verified.
 - **Anti-cheat warnings**: detect games with kernel-level anti-cheat and require explicit confirmation before deployment.
 
@@ -27,11 +29,12 @@ Future releases provide the **portable build only**. Open the **[latest release]
 | File | Use |
 |---|---|
 | `DLSSGManager.exe` | Portable single executable; place it in any writable folder and double-click to run |
-| `SHA256SUMS.txt` | SHA256 checksum for the executable |
+| `dlssgm.exe` | Optional command-line tool sharing the same library, for scripts and batch work (`dlssgm --help`) |
+| `SHA256SUMS.txt` | SHA256 checksums for the executables |
 
 - **Requirements**: Windows 10 / 11 x64. **No installation or separate .NET runtime is required.** Place the executable in a writable folder and run it.
 - **Mod files**: downloaded separately on first start, or manually through “Download / update mod files”.
-- **Further reading**: [v1.12.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
+- **Further reading**: [v1.13.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
 
 ## First use
 
@@ -88,7 +91,9 @@ Settings are stored per game. If saving fails, the error and retry action remain
 
 ### Restore and file protection
 
-- **File ownership checks**: proxy DLLs are identified by the project's signature or a hash in the deployment record; configuration files are recognized using records and project-specific content. Files with unconfirmed ownership are kept. Displaced original configuration files are backed up and restored according to the saved records.
+- **File ownership checks**: a file is only overwritten or removed when it is provably the manager's — by a hash in the deployment record, a hash in a release manifest, or a pinned-thumbprint project signature; configuration files are recognized using records and project-specific content. Files with unconfirmed ownership are kept. Displaced originals are backed up and, after their hash is checked, restored according to the saved records.
+- **Interruption safety**: every step of a deploy or restore is journalled first. After a crash or power loss, the next start undoes an unfinished deploy and completes an unfinished restore.
+- **Library protection**: each save keeps the previous `library.json.bak`; an unreadable library is set aside and the backup loaded, never replaced by an empty one.
 - **Runtime directory cleanup**: runtime components are recorded individually by hash. Restore keeps unknown files and unrecognized replacements; `dlssg_sm86/logs/` is removed only when log cleanup is selected.
 - **Closing during an operation**: closing the window offers to wait for completion; a download can be cancelled before exiting. Keep the library and restore backups so managed installations can be restored later.
 
@@ -97,23 +102,24 @@ Settings are stored per game. If saving fails, the error and retry action remain
 | Data | Location |
 |---|---|
 | Game library, manager log and restore backups | `%APPDATA%\DLSSGManager\` |
-| Mod files | Prefer `mod/` beside the program; if the download location is not writable, use `%APPDATA%\DLSSGManager\mod` |
+| Mod files | Prefer `mod/` beside the program; if the download location is not writable, use `%APPDATA%\DLSSGManager\mod`. Each release lives in `versions\<version>\`; the previous one is kept |
 | In-game Mod logs | `dlssg_sm86\logs` inside the game's render directory |
 
 ### Common fixes
 
 - **Download failed:** try a different source and check the output for the specific error.
 - **Game missing or wrong directory:** add it manually and check the render directory. Use render-directory detection for supported layouts.
-- **Deployment denied or files in use:** close the game first. For directory permission errors, expand Tools and restart as administrator.
+- **Deployment denied or files in use:** close the game first. For directory permission errors, deploy or restore asks whether to elevate that one operation (Windows then shows its administrator prompt).
 - **No effect or a crash after deployment:** check prerequisites, proxy entry, in-game frame-generation settings and Mod logs. Restore first if needed, then follow upstream troubleshooting instructions.
 - **Return to the original setup:** close the game and restore. Mod logs can optionally be removed at the same time.
 
 ## Development and feedback
 
-Building from source requires Windows and the .NET 8 SDK:
+Building from source requires Windows and the .NET 10 SDK:
 
 ```powershell
 dotnet build -c Release
+dotnet test -c Release
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building, packaging and contributions, and [HANDOVER.md](docs/HANDOVER.md) for project context.
