@@ -170,6 +170,14 @@ public static class PayloadCatalog
            .Any(f => f.Signer == PayloadSigner.Project &&
                      string.Equals(f.Sha256, sha256, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// True when the bytes are any deployable file of a known release (project builds and NVIDIA's
+    /// runtime as shipped). Used to bound what the elevated helper may copy; not an ownership test.
+    /// </summary>
+    public static bool IsReleaseFile(string sha256) =>
+        All.SelectMany(m => m.Files)
+           .Any(f => f.Kind != PayloadFileKind.Doc && string.Equals(f.Sha256, sha256, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Adds a manifest for the duration of a test. Hash-based lookups see it; downloads do not.</summary>
     internal static IDisposable AddForTesting(PayloadManifest manifest)
     {

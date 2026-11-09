@@ -428,6 +428,7 @@ public static partial class Strings
         ["Fetch.UpdatedVersion"] = "已更新到 {0}（{1}）",
         ["Fetch.UpdatedGeneric"] = "已更新 {0} 个文件（{1}）",
         ["Fetch.SignatureOk"] = "签名校验通过",
+        ["Restore.BackupChanged"] = "  备份 {0} 与记录不一致（可能被改动过），未放回",
         ["Deploy.SourceChanged"] = "Mod 文件 {0} 在检查之后被改动，已停止部署",
         ["Recovery.DeployRolledBack"] = "上次对 {0} 的部署被中断，已撤销未完成的改动",
         ["Recovery.RestoreFinished"] = "上次对 {0} 的恢复被中断，已继续完成",

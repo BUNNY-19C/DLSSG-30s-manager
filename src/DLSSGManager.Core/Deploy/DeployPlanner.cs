@@ -125,8 +125,19 @@ public static class DeployPlanner
         {
             if (source.RequiresSingleProxy)
             {
-                ops.Add(new DeleteFileOp(name, DeploymentService.Sha256(Path.Combine(root, name)),
-                    NoteSpec.Of("Deploy.RemoveRedundant", name)));
+                // A file this manager wrote (recorded hash) or built upstream can go; a community build the
+                // user installed by hand is recognised but not ours, so it is set aside first and comes back
+                // on restore.
+                var path = Path.Combine(root, name);
+                var hash = DeploymentService.Sha256(path);
+                var wroteIt = string.Equals(hash, DeploymentService.RecordedHashFor(prev, name), StringComparison.OrdinalIgnoreCase) ||
+                              PayloadCatalog.IsProjectBuild(hash) || DeploymentService.IsProjectSigned(path);
+                if (!wroteIt)
+                {
+                    ops.Add(new BackupOp(name));
+                    backups++;
+                }
+                ops.Add(new DeleteFileOp(name, hash, NoteSpec.Of("Deploy.RemoveRedundant", name)));
                 continue;
             }
 

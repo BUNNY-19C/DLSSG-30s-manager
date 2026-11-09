@@ -52,7 +52,8 @@ public class PlanTests
         using var f = new DeploymentFixture();
         using var elsewhere = new TempDir();
         var link = f.GamePath("dlssg_sm86");
-        Directory.CreateSymbolicLink(link, elsewhere.Path);
+        Junction.Create(link, elsewhere.Path);
+        Assert.True((File.GetAttributes(link) & FileAttributes.ReparsePoint) != 0);
 
         Assert.Throws<IOException>(() => PlanExecutor.Resolve(f.GameDir, "dlssg_sm86/runtime/nvngx_dlssg.dll"));
 

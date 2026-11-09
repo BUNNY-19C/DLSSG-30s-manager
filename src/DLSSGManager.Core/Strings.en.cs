@@ -427,6 +427,7 @@ public static partial class Strings
         ["Fetch.UpdatedVersion"] = "Updated to {0} ({1})",
         ["Fetch.UpdatedGeneric"] = "Updated {0} file(s) ({1})",
         ["Fetch.SignatureOk"] = "Signature verified",
+        ["Restore.BackupChanged"] = "  backup of {0} does not match its record (it may have been altered); not put back",
         ["Deploy.SourceChanged"] = "Mod file {0} changed after it was checked; deployment stopped",
         ["Recovery.DeployRolledBack"] = "The last deployment to {0} was interrupted; its partial changes were undone",
         ["Recovery.RestoreFinished"] = "The last restore of {0} was interrupted; it has been completed",

@@ -414,13 +414,17 @@ public static partial class DeploymentService
         {
             var path = PlanExecutor.Resolve(root, name);
             if (!File.Exists(path)) continue;
-            var nvidia = name.EndsWith("/nvngx_dlss.dll") || name.EndsWith("/nvngx_dlssg.dll");
-            using var cert = ReadSignerCertificate(path, out var intact, requireTrusted: nvidia);
-            // NVIDIA files chain to a trusted root (requireTrusted), so the subject is meaningful there;
-            // the project's self-signed files are identified by pinned thumbprint only.
-            var recognised = nvidia
-                ? intact && cert?.Subject.Contains("NVIDIA Corporation", StringComparison.OrdinalIgnoreCase) == true
-                : PayloadCatalog.IsProjectBuild(Sha256(path)) || ProjectSigning.IsProjectSignature(cert, intact);
+            // Adopting records a file as the manager's, so a later restore deletes it. Only bytes a known
+            // release ships qualify: a genuine NVIDIA signature alone would also match a copy the game
+            // installed itself. Project files from releases older than the manifests still count by
+            // pinned signature.
+            var hash = Sha256(path);
+            var recognised = PayloadCatalog.IsReleaseFile(hash);
+            if (!recognised && !name.Contains("nvngx", StringComparison.OrdinalIgnoreCase))
+            {
+                using var cert = ReadSignerCertificate(path, out var intact);
+                recognised = ProjectSigning.IsProjectSignature(cert, intact);
+            }
             if (recognised)
                 deployment.Files.Add(new DeployedFile { FileName = name, Sha256 = Sha256(path), Size = new FileInfo(path).Length });
         }

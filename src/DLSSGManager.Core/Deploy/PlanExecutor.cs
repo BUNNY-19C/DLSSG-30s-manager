@@ -224,8 +224,19 @@ public static class PlanExecutor
                             break;
                         }
 
+                        // The restore folder is user-writable: put back only the bytes recorded when the
+                        // original was set aside. Checked on the copy, so a swap during the copy is caught too.
                         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                        File.Copy(b.Backup.StoredPath, dest, overwrite: true);
+                        var restoreTmp = dest + TempSuffix;
+                        File.Copy(b.Backup.StoredPath, restoreTmp, overwrite: true);
+                        if (b.Backup.Sha256.Length > 0 &&
+                            !DeploymentService.Sha256(restoreTmp).Equals(b.Backup.Sha256, StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Delete(restoreTmp);
+                            r.Note(Loc.T("Restore.BackupChanged", b.Backup.FileName));
+                            break;
+                        }
+                        File.Move(restoreTmp, dest, overwrite: true);
                         removed++;
                         r.Note(Loc.T("Restore.BackupRestored", b.Backup.FileName));
                         break;
@@ -331,13 +342,18 @@ public static class PlanExecutor
         if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Path escapes the game folder: " + relative);
 
+        // Every directory from the target's parent up to and including the render directory itself:
+        // the root is checked too, so swapping it for a junction after planning is caught here.
         var dir = Path.GetDirectoryName(full);
-        while (dir is not null && dir.Length >= root.Length)
+        while (dir is not null && dir.Length >= root.Length - 1)
         {
             if (Directory.Exists(dir) && (File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("Directory is a link: " + dir);
             dir = Path.GetDirectoryName(dir);
         }
+        // The target itself must not be a link either: replacing it would write through to the link's target.
+        if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("File is a link: " + full);
 
         return full;
     }

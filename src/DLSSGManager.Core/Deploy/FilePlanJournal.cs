@@ -148,6 +148,14 @@ public static class PlanRecovery
                 continue;
             }
 
+            // The journal folder is user-writable: replay only plans the planner could have produced.
+            if (ElevatedProtocol.ValidateShape(entry.Plan) is { } invalid)
+            {
+                AppPaths.Log("[recovery] 忽略不合规的操作日志（" + path + "）: " + invalid);
+                File.Move(path, path + ".rejected", overwrite: true);
+                continue;
+            }
+
             var report = entry.Plan.Kind == PlanKind.Deploy ? RollBackDeploy(entry) : FinishRestore(entry);
             foreach (var line in report.Lines) AppPaths.Log("[recovery] " + line);
             try
@@ -204,12 +212,20 @@ public static class PlanRecovery
             }
         }
 
+        var unrestored = new List<BackupItem>();
         foreach (var backup in entry.BackedUp)
         {
             try
             {
                 var path = PlanExecutor.Resolve(plan.RenderDir, backup.FileName);
                 if (!File.Exists(backup.StoredPath)) { lines.Add(Loc.T("Restore.BackupLost", backup.FileName)); continue; }
+                if (backup.Sha256.Length > 0 &&
+                    !DeploymentService.Sha256(backup.StoredPath).Equals(backup.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    lines.Add(Loc.T("Restore.BackupChanged", backup.FileName));
+                    unrestored.Add(backup);
+                    continue;
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.Copy(backup.StoredPath, path, overwrite: true);
                 lines.Add(Loc.T("Restore.BackupRestored", backup.FileName));
@@ -217,12 +233,49 @@ public static class PlanRecovery
             catch (Exception ex)
             {
                 failed = true;
+                unrestored.Add(backup);
                 lines.Add(Loc.T("Recovery.StepFailed", backup.FileName, ex.Message));
             }
         }
 
         lines.Insert(0, Loc.T("Recovery.DeployRolledBack", plan.RenderDir));
-        return new RecoveryReport(plan.GameId, plan.RenderDir, true, lines) { Record = entry.Previous, Failed = failed };
+        return new RecoveryReport(plan.GameId, plan.RenderDir, true, lines)
+        {
+            Record = failed ? KeepTrackOf(entry, unrestored) : entry.Previous,
+            Failed = failed,
+        };
+    }
+
+    /// <summary>
+    /// A rollback that could not finish (typically a folder needing administrator rights, after an
+    /// elevated deploy was killed) must not forget what is still in the game folder: the previous record
+    /// gains the originals that were set aside and not put back, and the files the run wrote that are
+    /// still there. A later restore then removes ours and returns theirs.
+    /// </summary>
+    private static DeploymentInfo KeepTrackOf(JournalEntry entry, List<BackupItem> unrestored)
+    {
+        var record = entry.Previous is null
+            ? new DeploymentInfo { ProxyName = entry.Plan.ProxyName }
+            : System.Text.Json.JsonSerializer.Deserialize<DeploymentInfo>(System.Text.Json.JsonSerializer.Serialize(entry.Previous))!;
+
+        record.AppliedConfiguration = "";
+        foreach (var backup in unrestored.Where(b => record.Backups.All(x => !Same(x.FileName, b.FileName))))
+            record.Backups.Add(backup);
+
+        foreach (var relative in entry.Writing.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var path = PlanExecutor.Resolve(entry.Plan.RenderDir, relative);
+                if (!File.Exists(path) || record.Files.Any(f => Same(f.FileName, relative))) continue;
+                record.Files.Add(new DeployedFile { FileName = relative, Sha256 = DeploymentService.Sha256(path), Size = new FileInfo(path).Length });
+            }
+            catch
+            {
+                // Unreadable: the status check will report it.
+            }
+        }
+        return record;
     }
 
     private static RecoveryReport FinishRestore(JournalEntry entry)

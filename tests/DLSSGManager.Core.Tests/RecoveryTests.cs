@@ -193,6 +193,8 @@ public class RecoveryTests
 
 public class ElevatedProtocolTests
 {
+    private static ElevationTrust Trust(params string[] sourceRoots) => new(AppPaths.RestoreRoot, sourceRoots);
+
     private static ElevatedRequest Request(DeploymentFixture f, string dataRoot, Func<DeployPlan, DeployPlan>? change = null)
     {
         var plan = DeployPlanner.PlanDeploy(f.Game, f.Source, allowProtected: true).Plan!;
@@ -203,7 +205,7 @@ public class ElevatedProtocolTests
     public void A_normal_plan_from_the_mod_store_is_accepted()
     {
         using var f = new DeploymentFixture();
-        Assert.Null(ElevatedProtocol.Validate(Request(f, AppPaths.Root), new[] { f.PayloadRoot }));
+        Assert.Null(ElevatedProtocol.Validate(Request(f, AppPaths.Root), Trust(f.PayloadRoot)));
     }
 
     [Fact]
@@ -211,7 +213,7 @@ public class ElevatedProtocolTests
     {
         using var f = new DeploymentFixture();
         using var other = new TempDir();
-        Assert.NotNull(ElevatedProtocol.Validate(Request(f, AppPaths.Root), new[] { other.Path }));
+        Assert.NotNull(ElevatedProtocol.Validate(Request(f, AppPaths.Root), Trust(other.Path)));
     }
 
     [Fact]
@@ -219,7 +221,7 @@ public class ElevatedProtocolTests
     {
         using var f = new DeploymentFixture();
         var request = Request(f, AppPaths.Root, p => p with { RenderDir = Environment.GetFolderPath(Environment.SpecialFolder.System) });
-        Assert.NotNull(ElevatedProtocol.Validate(request, new[] { f.PayloadRoot }));
+        Assert.NotNull(ElevatedProtocol.Validate(request, Trust(f.PayloadRoot)));
     }
 
     [Fact]
@@ -227,7 +229,7 @@ public class ElevatedProtocolTests
     {
         using var f = new DeploymentFixture();
         var request = Request(f, AppPaths.Root, p => p with { RenderDir = Path.GetPathRoot(f.GameDir)! });
-        Assert.NotNull(ElevatedProtocol.Validate(request, new[] { f.PayloadRoot }));
+        Assert.NotNull(ElevatedProtocol.Validate(request, Trust(f.PayloadRoot)));
     }
 
     [Fact]
@@ -238,7 +240,7 @@ public class ElevatedProtocolTests
         {
             Ops = p.Ops.Select(op => op is WriteFileOp w ? w with { ExpectedSha256 = "" } : op).ToArray(),
         });
-        Assert.NotNull(ElevatedProtocol.Validate(request, new[] { f.PayloadRoot }));
+        Assert.NotNull(ElevatedProtocol.Validate(request, Trust(f.PayloadRoot)));
     }
 
     [Fact]
@@ -249,7 +251,7 @@ public class ElevatedProtocolTests
         {
             new RestoreBackupOp(new BackupItem { FileName = "x.dll", StoredPath = @"C:\Windows\System32\kernel32.dll" }, "x.dll", false),
         });
-        Assert.NotNull(ElevatedProtocol.Validate(new ElevatedRequest(plan, null, AppPaths.Root), new[] { f.PayloadRoot }));
+        Assert.NotNull(ElevatedProtocol.Validate(new ElevatedRequest(plan, null, AppPaths.Root), Trust(f.PayloadRoot)));
     }
 
     [Theory]
@@ -282,7 +284,7 @@ public class ElevatedProtocolTests
 
         Assert.Equal(request.Plan.Ops.Count, received.Plan.Ops.Count);
         Assert.Equal(request.Plan.RenderDir, received.Plan.RenderDir);
-        Assert.Null(ElevatedProtocol.Validate(received, new[] { f.PayloadRoot }));
+        Assert.Null(ElevatedProtocol.Validate(received, Trust(f.PayloadRoot)));
     }
 
     [Fact]

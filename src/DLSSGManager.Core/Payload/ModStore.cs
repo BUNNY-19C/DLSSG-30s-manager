@@ -91,6 +91,7 @@ public static partial class ModStore
             populate(incoming);
             if (!File.Exists(Path.Combine(incoming, ModSource.IniName)))
                 throw new InvalidOperationException(Loc.T("ModSource.IniMissing", ModSource.IniName));
+            File.WriteAllText(Path.Combine(incoming, InstalledMarker), version);
 
             CarryImportedProxies(previous, incoming, log);
 
@@ -116,19 +117,33 @@ public static partial class ModStore
     }
 
     /// <summary>
-    /// Entries a pre-versioned mod root holds. Only these are moved, so a user-chosen folder that also
-    /// contains unrelated files keeps them where they are.
+    /// Marker written into every release folder the manager assembled itself. Only marked folders are
+    /// ever pruned; a folder made by migrating an older layout is never deleted automatically.
     /// </summary>
-    private static readonly string[] FlatLayoutEntries =
+    public const string InstalledMarker = ".manager-installed";
+
+    /// <summary>
+    /// The payload files of an older flat mod root: the INI, the version markers, the proxies the manager
+    /// knows, the runtime files and the documentation upstream ships. Nothing else is moved, so files the
+    /// user keeps in that folder (and folders such as <c>config\</c> or <c>docs\</c>) stay where they are.
+    /// Proxies the user imported into <c>altnative\</c> move with the payload they belong to.
+    /// </summary>
+    private static IEnumerable<string> FlatLayoutFiles(string root)
     {
-        ModSource.IniName, "version.dll", ModSource.AltDirName, ModSource.LogDirName, "config", "docs",
-        "README.md", "README.en.md", "THIRD_PARTY_NOTICES.txt", BuildCatalog.Marker, ModFetcher.VersionMarkerName,
-    };
+        var fixedFiles = new[] { ModSource.IniName, BuildCatalog.Marker, ModFetcher.VersionMarkerName, "README.md", "README.en.md", "THIRD_PARTY_NOTICES.txt" }
+            .Concat(ModSource.KnownProxyNames.Select(n => Path.GetRelativePath(root, ModSource.ResolveDllPath(root, n))))
+            .Concat(ModSource.RuntimeFiles.Select(f => f.Replace('/', Path.DirectorySeparatorChar)));
+        var imported = Directory.Exists(Path.Combine(root, ModSource.AltDirName))
+            ? Directory.EnumerateFiles(Path.Combine(root, ModSource.AltDirName), "*.dll").Select(f => Path.GetRelativePath(root, f))
+            : Enumerable.Empty<string>();
+        return fixedFiles.Concat(imported).Distinct(StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Moves a pre-versioned payload sitting directly in <paramref name="root"/> into
     /// <c>versions/&lt;its label&gt;</c> and makes it active, so the release being replaced is kept for
-    /// rolling back instead of overwritten in place.
+    /// rolling back instead of overwritten in place. Only payload files are moved (see
+    /// <see cref="FlatLayoutFiles"/>); folders left empty by the move are removed.
     /// </summary>
     internal static void MigrateFlatLayout(string root, OpResult? log = null)
     {
@@ -143,12 +158,24 @@ public static partial class ModStore
         if (Directory.Exists(target)) target = Path.Combine(root, VersionsDirName, label + "-" + DateTime.Now.ToString("yyyyMMddHHmmss"));
         Directory.CreateDirectory(target);
 
-        foreach (var name in FlatLayoutEntries)
+        foreach (var relative in FlatLayoutFiles(root).ToList())
         {
-            var from = Path.Combine(root, name);
-            var to = Path.Combine(target, name);
-            if (File.Exists(from)) File.Move(from, to);
-            else if (Directory.Exists(from)) Directory.Move(from, to);
+            var from = Path.Combine(root, relative);
+            if (!File.Exists(from)) continue;
+            var to = Path.Combine(target, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Move(from, to);
+        }
+
+        foreach (var dir in new[] { ModSource.AltDirName }
+                     .Concat(ModSource.RuntimeFiles.Select(f => Path.GetDirectoryName(f.Replace('/', Path.DirectorySeparatorChar))!))
+                     .Append(ModSource.LogDirName)
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderByDescending(d => d.Length))
+        {
+            var path = Path.Combine(root, dir);
+            try { if (Directory.Exists(path) && !Directory.EnumerateFileSystemEntries(path).Any()) Directory.Delete(path); }
+            catch { /* left in place; harmless */ }
         }
 
         WriteCurrent(root, Path.GetFileName(target));
@@ -203,17 +230,24 @@ public static partial class ModStore
         }
     }
 
-    /// <summary>Removes releases beyond <see cref="KeepVersions"/>, never the active one, and stale scratch folders.</summary>
+    /// <summary>
+    /// Removes releases beyond <see cref="KeepVersions"/> — only folders the manager assembled itself
+    /// (<see cref="InstalledMarker"/>), never the active one, never a migrated folder — and stale scratch
+    /// folders of its own.
+    /// </summary>
     private static void Prune(string root, string active)
     {
         var versions = Path.Combine(root, VersionsDirName);
-        foreach (var scratch in Directory.EnumerateDirectories(versions, ".*"))
+        foreach (var scratch in Directory.EnumerateDirectories(versions, ".incoming-*")
+                     .Concat(Directory.EnumerateDirectories(versions, ".retired-*")))
         {
             // Scratch folders of an install that is still running are minutes old at most.
             if (Directory.GetCreationTimeUtc(scratch) < DateTime.UtcNow.AddHours(-1)) TryDeleteDirectory(scratch);
         }
 
-        foreach (var old in InstalledVersions(root).Where(v => v != active).Skip(KeepVersions - 1))
+        foreach (var old in InstalledVersions(root)
+                     .Where(v => v != active && File.Exists(Path.Combine(versions, v, InstalledMarker)))
+                     .Skip(KeepVersions - 1))
             TryDeleteDirectory(Path.Combine(versions, old));
     }
 

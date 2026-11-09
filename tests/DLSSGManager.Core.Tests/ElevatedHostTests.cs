@@ -17,7 +17,7 @@ public class ElevatedHostTests
 
         await Task.WhenAll(server.WaitForConnectionAsync(timeout.Token), client.ConnectAsync(timeout.Token));
 
-        var helper = ElevatedHost.HandleAsync(client, timeout.Token, () => sourceRoots);
+        var helper = ElevatedHost.HandleAsync(client, new ElevationTrust(AppPaths.RestoreRoot, sourceRoots), timeout.Token);
         await ElevatedProtocol.WriteAsync(server, request, timeout.Token);
         var response = await ElevatedProtocol.ReadAsync<ElevatedResponse>(server, timeout.Token);
         await helper;

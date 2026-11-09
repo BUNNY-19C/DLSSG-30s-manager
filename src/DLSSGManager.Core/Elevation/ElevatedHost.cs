@@ -3,14 +3,13 @@ namespace DLSSGManager;
 /// <summary>
 /// The elevated helper's work, kept in Core so it can be exercised over a pipe without UAC.
 ///
-/// Reads one <see cref="ElevatedRequest"/>, validates it (<see cref="ElevatedProtocol.Validate"/>),
-/// runs the plan journalled, and writes one <see cref="ElevatedResponse"/>. The data folder comes from
-/// the request — an elevated process may run under a different profile — and is applied before
-/// anything is logged.
+/// Reads one <see cref="ElevatedRequest"/>, validates it against what the helper itself trusts
+/// (<see cref="ElevationTrust"/> — derived from this process, never from the request), runs the plan
+/// journalled, and writes one <see cref="ElevatedResponse"/>.
 /// </summary>
 public static class ElevatedHost
 {
-    /// <summary>Mod store folders a plan's sources may come from.</summary>
+    /// <summary>Mod store folders a plan's sources may come from, as this process resolves them.</summary>
     public static IReadOnlyList<string> SourceRoots() =>
         new[] { ModSourceLocator.ResolveTarget(null), AppPaths.UserModDir, AppPaths.BundledModDir }
             .Concat(ModSourceLocator.FindRepositoryRoot() is { } repo ? new[] { Path.Combine(repo, "mod") } : Array.Empty<string>())
@@ -25,6 +24,9 @@ public static class ElevatedHost
     {
         if (!Shell.IsHelperPipeName(pipeName)) return 2;
 
+        // Fixed before anything is read from the pipe: a request cannot move the trust anchors.
+        var trust = ElevationTrust.ForCurrentProcess();
+
         await using var pipe = new System.IO.Pipes.NamedPipeClientStream(".", pipeName!,
             System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
@@ -38,9 +40,13 @@ public static class ElevatedHost
             return 3;
         }
 
+        // Only serve the process that launched us. The pipe name came from our own command line, so a
+        // pipe created by anything else under that name is not the manager.
+        if (ElevatedProtocol.ServerProcessId(pipe) is not { } server || !IsParent(server)) return 3;
+
         try
         {
-            var response = await HandleAsync(pipe, timeout.Token).ConfigureAwait(false);
+            var response = await HandleAsync(pipe, trust, timeout.Token).ConfigureAwait(false);
             return response.Ok ? 0 : 1;
         }
         catch
@@ -49,29 +55,31 @@ public static class ElevatedHost
         }
     }
 
-    public static async Task<ElevatedResponse> HandleAsync(Stream pipe, CancellationToken ct,
-        Func<IReadOnlyList<string>>? sourceRoots = null)
+    /// <summary>
+    /// True when <paramref name="processId"/> runs the same executable as this process. The manager
+    /// starts the helper from its own image, so a pipe served by any other program is refused.
+    /// </summary>
+    private static bool IsParent(int processId)
+    {
+        try
+        {
+            var other = Native.GetProcessPath(processId);
+            return other is not null && string.Equals(Path.GetFullPath(other), Path.GetFullPath(Environment.ProcessPath!),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static async Task<ElevatedResponse> HandleAsync(Stream pipe, ElevationTrust trust, CancellationToken ct)
     {
         ElevatedResponse response;
         try
         {
             var request = await ElevatedProtocol.ReadAsync<ElevatedRequest>(pipe, ct).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(request.DataRoot) && Path.IsPathFullyQualified(request.DataRoot))
-                Environment.SetEnvironmentVariable(AppPaths.RootOverrideVariable, request.DataRoot);
-
-            var invalid = ElevatedProtocol.Validate(request, (sourceRoots ?? SourceRoots)());
-            if (invalid is not null)
-            {
-                AppPaths.Log("[elevated] 拒绝执行: " + invalid);
-                response = new ElevatedResponse(false, Loc.T("Elevated.Failed", invalid), new List<string>(), false, request.Previous);
-            }
-            else
-            {
-                var journal = new FilePlanJournal(request.Previous, Path.Combine(request.DataRoot, "journal"));
-                var result = PlanExecutor.Execute(request.Plan, request.Previous, journal);
-                response = new ElevatedResponse(result.Result.Ok, result.Result.Message, result.Result.Lines,
-                    result.RecordChanged, result.Record);
-            }
+            response = Run(request, trust);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -80,5 +88,26 @@ public static class ElevatedHost
 
         await ElevatedProtocol.WriteAsync(pipe, response, ct).ConfigureAwait(false);
         return response;
+    }
+
+    private static ElevatedResponse Run(ElevatedRequest request, ElevationTrust trust)
+    {
+        var invalid = ElevatedProtocol.Validate(request, trust);
+        if (invalid is not null)
+        {
+            AppPaths.Log("[elevated] 拒绝执行: " + invalid);
+            return new ElevatedResponse(false, Loc.T("Elevated.Failed", invalid), new List<string>(), false, request.Previous);
+        }
+
+        // Hold the render directory open without delete sharing while the plan runs, so it cannot be
+        // renamed and replaced by a link between the check above and the writes below.
+        using var pinned = Native.OpenDirectoryPinned(request.Plan.RenderDir);
+        var recheck = ElevatedProtocol.ValidateRoot(request.Plan.RenderDir);
+        if (recheck.Error is not null)
+            return new ElevatedResponse(false, Loc.T("Elevated.Failed", recheck.Error), new List<string>(), false, request.Previous);
+
+        var journal = new FilePlanJournal(request.Previous, Path.Combine(Path.GetDirectoryName(trust.RestoreRoot)!, "journal"));
+        var result = PlanExecutor.Execute(request.Plan, request.Previous, journal);
+        return new ElevatedResponse(result.Result.Ok, result.Result.Message, result.Result.Lines, result.RecordChanged, result.Record);
     }
 }

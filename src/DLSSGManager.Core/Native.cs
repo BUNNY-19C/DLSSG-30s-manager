@@ -55,4 +55,48 @@ public static class Native
     }
 
     // Restarting with elevation lives in Shell.RelaunchElevated, alongside the other shell operations.
+
+    private const uint FILE_READ_ATTRIBUTES = 0x0080;
+    private const uint FILE_SHARE_READ = 0x1;
+    private const uint FILE_SHARE_WRITE = 0x2;
+    private const uint OPEN_EXISTING = 3;
+    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share,
+        IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern uint GetFinalPathNameByHandleW(Microsoft.Win32.SafeHandles.SafeFileHandle handle,
+        StringBuilder path, uint length, uint flags);
+
+    /// <summary>
+    /// Opens a directory and keeps it from being renamed or deleted while the handle is held (no
+    /// FILE_SHARE_DELETE). Links in the path are followed, so the handle refers to the real directory.
+    /// </summary>
+    public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectoryPinned(string path)
+    {
+        var handle = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero,
+            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+        if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), path);
+        return handle;
+    }
+
+    /// <summary>
+    /// The real location an open handle refers to, with every junction and symbolic link resolved, as a
+    /// plain drive path ("C:\…"). Null for locations that have no drive path (network shares, devices).
+    /// </summary>
+    public static string? FinalPath(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
+        var buffer = new StringBuilder(1024);
+        var length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+        if (length == 0 || length >= buffer.Capacity) return null;
+
+        var path = buffer.ToString(0, (int)length);
+        const string prefix = @"\\?\";
+        if (!path.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        path = path[prefix.Length..];
+        // "\\?\UNC\server\share" is a network location: not a plain drive path.
+        return path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] == '\\' ? path : null;
+    }
 }
