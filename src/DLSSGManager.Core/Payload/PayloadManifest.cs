@@ -48,6 +48,8 @@ public sealed record PayloadFile
     public PayloadFileKind Kind { get; init; }
     public PayloadSigner Signer { get; init; }
     public PayloadPackageKind Package { get; init; }
+
+    /// <summary>Exact size and hash. Not enforced for <see cref="PayloadFileKind.Doc"/>, which is never deployed.</summary>
     public long Size { get; init; }
     public string Sha256 { get; init; } = "";
 

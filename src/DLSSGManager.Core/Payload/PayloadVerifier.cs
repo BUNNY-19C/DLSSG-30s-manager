@@ -36,8 +36,10 @@ public static class PayloadVerifier
         var fullPresent = full.Count(f => File.Exists(StagedPath(staging, f)));
         if (fullPresent != 0 && fullPresent != full.Count) return PayloadVerification.Reject(Loc.T("Manage.NeedFullPackage"));
 
+        // Documentation is never deployed or executed, and the release archive's README differs from the
+        // repository's at the same tag, so it is copied when present but not pinned.
         var mismatched = new List<string>();
-        foreach (var file in manifest.Files)
+        foreach (var file in manifest.Files.Where(f => f.Kind != PayloadFileKind.Doc))
         {
             var path = StagedPath(staging, file);
             if (!File.Exists(path)) continue;

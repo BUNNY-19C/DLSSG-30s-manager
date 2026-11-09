@@ -101,6 +101,23 @@ public class PayloadTests
     }
 
     [Fact]
+    public void Documentation_differences_do_not_fail_verification()
+    {
+        using var release = new StagedRelease();
+        var withDoc = release.Manifest with
+        {
+            Files = release.Manifest.Files.Append(new PayloadFile
+            {
+                Source = "README.md", Destination = "README.md", Kind = PayloadFileKind.Doc,
+                Size = 3, Sha256 = new string('C', 64),
+            }).ToArray(),
+        };
+        File.WriteAllText(release.Path("README.md"), "a different readme");
+
+        Assert.True(PayloadVerifier.Verify(release.Staging, withDoc, checkSignatures: false).Accepted);
+    }
+
+    [Fact]
     public void Tampered_ini_template_is_rejected()
     {
         using var release = new StagedRelease();
