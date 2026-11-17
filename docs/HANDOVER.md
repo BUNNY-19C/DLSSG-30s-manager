@@ -6,7 +6,7 @@
 - **上游 0.4.2**：布局与 INI 结构都没变，只需新增 `Payload/Manifests/0.4.2.json` 并改 `ModFetcher.SupportedRelease`。两处需要留意：
   - **`[XeSSFG] UseHudless=Auto` 语义变了**：0.4.2 起 Auto 与 `0` 相同（整幅画面含 UI 一起插值），不再是"优先用无 HUD 画面"。管理器照原值写，界面文案已改。
   - 新增 `[Logging] Directory` 键（日志目录）。管理器不覆写它，沿用上游模板值；自己加的进阶键只有 `FrameTiming`。
-- 上游 0.4.1 / 0.4.0 的适配细节见 [0.4.1 适配记录](UPSTREAM-0.4.1.md) 与 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。旧版超分 On 在应用新版前要求主动选择显式模式；已有档位与各引擎倍率保留。
+- 上游 0.4.1 / 0.4.0 的适配细节见 [0.4.1 适配记录](UPSTREAM-0.4.1.md) 与 [0.4.0 适配记录](UPSTREAM-0.4.0.md)；**0.4.2 的记录见本文第 8 节**（布局没变，写在这里比再开一个文件更不容易过时）。旧版超分 On 在应用新版前要求主动选择显式模式；已有档位与各引擎倍率保留。
 - 后续仅发布 Windows x64 自包含单文件绿色版，统一使用 `Portable` 发布配置；产物为 `publish/DLSSGManager.exe`。
 - **v1.11.0 已适配上游 0.4.0**：完整包下载、目录化运行负载、单代理升级、新配置与恢复规则见 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。
 - **v1.12.0 重构内容**：
@@ -214,20 +214,25 @@ mod/                                下载得到的上游负载，不入库
 
 ## 5. 上游更新了怎么办（适配手册）
 
-上游更新时按这个清单逐项核对，**不要凭版本号猜测**：
+上游更新时按这个清单逐项核对，**不要凭版本号猜测**。0.4.2 起上游的 release 包里带 `manifest.json`（每个文件的大小 + SHA-256）和 `validation.json`，直接拿它当权威来源，再用实际下载的字节交叉验证。
 
-```bash
-# 1. 版本 + 提交历史
-curl -s "https://api.github.com/repos/sdli1995/dlssg_for_sm86/commits?per_page=3" | python -c "..."
-# 2. README 标题（版本探测依赖的正则）
-curl -s "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/main/README.md" | head -2
-# 3. 文件树（比对本项目 Payload 表的 SourcePath）
-curl -s "https://api.github.com/repos/sdli1995/dlssg_for_sm86/git/trees/main?recursive=1" | python -c "..."
-# 4. INI 键（schema 是否变化）
-curl -s "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/main/dlssg_sm86.ini" | grep -E "^[A-Za-z]+="
-# 5. 证书指纹（下载一个 DLL 验签）
-curl -sL -o /tmp/v.dll "https://gh-proxy.com/https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/main/version.dll"
-powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificate.Thumbprint"
+```powershell
+$r = 'sdli1995/dlssg_for_sm86'
+# 1. 版本 + 发布说明 + 提交历史
+(Invoke-RestMethod "https://api.github.com/repos/$r/releases?per_page=3" -Headers @{'User-Agent'='x'}) |
+    % { "{0} {1} {2}" -f $_.tag_name, $_.published_at, $_.name }
+# 2. 下载 release 包，用上游 manifest.json 交叉验证每个文件
+Invoke-WebRequest "https://github.com/$r/releases/download/$ref/dlssg-release-$ref-x64.zip" -OutFile x.zip
+Expand-Archive x.zip -DestinationPath ex -Force
+$up = Get-Content ex/manifest.json -Raw | ConvertFrom-Json
+$up.files | % { (Get-FileHash (Join-Path ex ($_.path -replace '/','\'))).Hash -eq $_.sha256.ToUpper() }   # 必须全 True
+# 3. INI 键与语义（schema / 某个值是否改了含义）
+Select-String -Path ex/dlssg_sm86.ini -Pattern '^\s*[A-Za-z_]\w*\s*=' | % { $_.Line.Trim() }
+# 4. 证书指纹（项目 D963A96D… / NVIDIA 7B7B0B66…）
+Get-AuthenticodeSignature ex/version.dll | % { $_.Status; $_.SignerCertificate.Thumbprint }
+# 5. per-file 源也必须一致（raw@tag），国内用户主要走这类源
+Invoke-WebRequest "https://raw.githubusercontent.com/$r/$ref/version.dll" -OutFile v.dll
+(Get-FileHash v.dll).Hash
 ```
 
 对照点：
@@ -242,18 +247,9 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 | INI 键 | `IniTemplate.Values` | 新键需要界面控件 |
 | 默认值 | `GameProfile` 字段默认值 | 上游调默认（0.3.3 把倍率默认从 5 调到 3） |
 
-**0.4.2 用过的核对步骤**（上游现在自带 `manifest.json`，可以省掉一半人工）：
-
-```powershell
-# 1. 下载 release 包，用上游 manifest.json 交叉验证每个文件
-$up = Get-Content manifest.json -Raw | ConvertFrom-Json
-$up.files | % { (Get-FileHash (Join-Path $ex ($_.path -replace '/','\'))).Hash -eq $_.sha256.ToUpper() }
-# 2. 验签：项目指纹应仍是 D963A96D…，NVIDIA 文件是 7B7B0B66…
-# 3. 确认 per-file 源（raw@tag）提供的字节与清单一致 —— 国内用户主要走这类源
-# 4. 用 dlssgm import 导入、verify 核对、deploy 部署，检查生成的 INI 与恢复后目录
-```
-
 **历史经验**：0.3.4 修了 0.3.3 在 RTX 30 上的驱动崩溃、0.3.5 修了帧生成重建后的花屏——这类纯运行时修复**不需要改管理器代码**，只需让用户更新负载。判断标准是：布局/schema/入口/证书都没变，就只更新负载。
+
+**但"布局没变"不等于"不用动界面"**：0.4.2 就是布局、入口、证书全都没变，却改了 `UseHudless=Auto` 的含义。所以每次都要把 INI 的注释读一遍，看有没有哪个**值**的含义变了。
 
 ---
 
@@ -271,16 +267,40 @@ $up.files | % { (Get-FileHash (Join-Path $ex ($_.path -replace '/','\'))).Hash -
 
 按价值排序：
 
-1. **310.1 构建变体现已支持（当前工作区）**：DLL 下载路径加 `310.1/`，INI 仍取上游根目录；本地使用 `mod/variants/310.1` 与默认根构建分开。`ManagementState.cs` 定义构建限制与配置快照，`MainWindow.Management.cs` 负责保存状态与关闭流程，`MainWindow.Batch.cs` 负责 IBatchHost 实现。旧记录没有应用快照时显示待应用，不臆测其配置。
-2. **构造审查的 Optional 项**（未做，风险低）：
-   - `ExtractArchive` 限制了条目数（500）、单条目大小（200MB）、总解压量（300MB），防止 zip 炸弹（v1.12.0 已实现）。
-   - 保存失败与关闭保护已落地：Save 返回结果；UI 保留内存记录和重试提示，批量保存失败停止后续项；Closing 等待操作完成或取消下载后退出。此流程不覆盖强制结束进程或断电。
+1. **界面与提权路径没有自动化测试**：WPF 窗口、视图模型和真正经过 UAC 的那一次提权（要人工点"是"）都没覆盖。提权处理器本身已通过命名管道端到端测过，但"点 UAC 确认 → 助手执行"这一跳只能人工验证。改到这两块时，请实际跑一遍部署和恢复。
+2. **`dlssgm <子命令> --help` 不工作**：`--help` 只认顶层（`dlssgm --help`）；写在子命令后面会被当成缺值的参数，报"缺少参数值: --help"。日常影响很小，因为 `dlssgm --help` 列出了全部用法；要修就在 `Cli.RunAsync` 里先剔除子命令参数中的 `--help`/`-h`。
 3. **反作弊规则表**与 GPU 设备 ID 区间是经验数据，遇到误判按实际游戏样本增补。
-4. **测试覆盖**：`tests/DLSSGManager.Core.Tests` 覆盖 Core 与命令行（部署往返、归属判定、计划、清单与下载校验、断点续传、崩溃恢复、提权协议、库文件恢复、CLI），`tests/smoke/cli-smoke.ps1` 对构建产物做端到端检查，CI 与发版都会跑。未覆盖：WPF 界面与视图模型（有意不做界面自动化）、真正经过 UAC 的提权（需要人工点确认，提权处理器本身已经通过命名管道测过）。
+4. **310.1 旧构建变体**：代码里仍保留 `BuildCatalog.Conservative` 与 `mod/variants/310.1` 的路径规则（`ManagementState.cs`），但界面上只提供当前 310.9.16，下载入口也拒绝旧构建。属于历史兼容，不要当成可用功能。
+5. **安全扫描不是安全证明**：Mimosa 深度扫描每次都报 `inconclusive` / 覆盖不完整，即使 0 发现也不能当作"已审计"。真正的保障是 `tests/` 里的 176 个用例（含针对提权绕过的攻击用例）和一次独立的对抗式代码审查。改动涉及写游戏目录或提权时，请补一条对应攻击/往返测试。
+6. **`extra-proxies/` 里的东西已经过时**：那个 10 MB 的 `d3d12.dll` 是历史遗留（上游 0.3.0 起自带 d3d12 入口），其 README 还引用已不存在的 `ModFetcher.Extras` / `SelfRef` 符号。它不在任何构建或下载路径上，可以安全移除；留着只是因为当时没人清理。移除不影响功能——管理器识别手装社区版靠的是 `ModFetcher.KnownCommunityBuildHashes` 里的哈希。
 
 ---
 
-## 8. 协作约定
+## 8. 本次上游适配记录（v1.14.0 / 上游 0.4.2）
+
+留档，供下次对照。
+
+**上游 0.4.2 的变化**（该版本上游开始在自己的 release 包里附带 `manifest.json`，其中列出每个文件的大小与 SHA-256，这一步省掉不少人工）：
+
+- 文件布局与 INI 结构**不变**，可直接覆盖升级。
+- `[XeSSFG] UseHudless=Auto` 语义改为与 `0` 相同（整幅含 UI 一起插值）。**代码不用改，界面文案必须改**——原来的"优先使用无 HUD 画面"是错的。
+- 新增 `[Logging] Directory` 键（日志目录）。管理器不覆写它，沿用上游值。
+- 新增 `dlssg_sm86ini_Configurator.html`、`MANUAL*.html`、`docs/*`、`manifest.json`、`validation.json`。管理器只安装清单里的 15 个文件，其余忽略。
+- 除 NVIDIA 的 `nvngx_dlssg.dll`、`sr/nvngx_dlss.dll` 外，其余载荷文件全部重新编译（哈希都变了）。证书指纹未变。
+
+**做过的验证**（可复用为下次的流程）：
+
+1. 上游 `manifest.json` 与下载到的 29 个文件逐一比对 → 0 处不符。
+2. 核对签名指纹：项目 `D963A96D…`、NVIDIA `7B7B0B66…`，均未变。
+3. 确认 **per-file 源**（`raw.githubusercontent.com/<repo>/0.4.2/...`）提供的字节与清单一致——国内用户主要走 raw / ghproxy / jsdelivr / ghfast，这一项必须查。
+4. `dlssgm import` 导入完整包 → `verify` 核对 → `deploy` 部署 → 检查生成的 INI（确认 `Directory` 保留、`UseHudless` 按配置写入）→ `restore` 后目录逐字节复原。
+5. 真实 `dlssgm fetch --source raw --package base` 下载 13 个文件，哈希全对。
+6. 仓库的 `mod/` 已升级：旧的平铺 0.4.1 自动整理进 `mod/versions/0.4.1`（可回退），0.4.2 装入 `mod/versions/0.4.2`；`config/`、`docs/` 按设计留在原位。
+7. 下载发布产物后核对 `SHA256SUMS.txt`、内嵌版本号，并用发布的 `dlssgm.exe` 对真实 0.4.2 负载跑 `verify`。
+
+---
+
+## 9. 协作约定
 
 - **issue 回复是给外部用户看的**：大白话讲原因、给可操作步骤、版本号只提最新；实现细节留在 commit message 与代码注释里。
 - **README 一切从简**，游戏特有事项集中在页首的注意事项块。
