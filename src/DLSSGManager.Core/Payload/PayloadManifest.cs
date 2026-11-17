@@ -71,7 +71,13 @@ public sealed record PayloadCapabilities
     public bool SingleProxy { get; init; }
 
     [JsonIgnore] public bool LegacySchema => IniSchema.StartsWith("0.2", StringComparison.Ordinal);
-    [JsonIgnore] public bool Schema041 => IniSchema == "0.4.1";
+
+    /// <summary>
+    /// True for the schema introduced in 0.4.1 (explicit SR modes, presets A/B/C, XeSS 2X-4X) and kept
+    /// in later releases: 0.4.2 adds a key and changes what one value means, not the shape of the file.
+    /// </summary>
+    [JsonIgnore] public bool Schema041 =>
+        Version.TryParse(IniSchema, out var version) && version >= new Version(0, 4, 1);
 }
 
 /// <summary>

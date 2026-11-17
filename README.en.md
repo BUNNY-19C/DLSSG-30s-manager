@@ -34,7 +34,7 @@ Future releases provide the **portable build only**. Open the **[latest release]
 
 - **Requirements**: Windows 10 / 11 x64. **No installation or separate .NET runtime is required.** Place the executable in a writable folder and run it.
 - **Mod files**: downloaded separately on first start, or manually through “Download / update mod files”.
-- **Further reading**: [v1.13.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
+- **Further reading**: [v1.14.0 release notes](docs/RELEASE-NOTES.md) · [Mod files and licensing](docs/mod-files.md)
 
 ## First use
 
@@ -63,7 +63,7 @@ Settings are stored per game. If saving fails, the error and retry action remain
 | **Saved, pending application** | Settings are saved but not applied; older records without a configuration snapshot also show this state |
 | **Applied** | Settings match the last deployment record; later changes require applying again and restarting the game |
 
-### Upstream 0.4.1
+### Upstream 0.4.2
 
 **NVIDIA R580 or newer is required.** Older drivers no longer fall back to PTX. Upstream may refuse older game frame-generation plugins; consult the game log for the reason.
 
@@ -71,12 +71,13 @@ Settings are stored per game. If saving fails, the error and retry action remain
 |---|---|---|---|
 | `310.9.16` (current) | DLSS 2X–6X; XeSS 2X / 3X / 4X | 0–3; new profiles default to 1 | A / B / C |
 
-- **Downloads and defaults**: downloads target **0.4.1**. The full Release package includes SR files; the base package provides frame generation and XeSS. New profiles use DLSS, tier 1, preset A and SR off. Existing tiers and DLSS multipliers are retained. XeSS keeps a separate count: existing profiles retain 2X and can select 3X / 4X.
-- **Multipliers and presets**: the requested count must be supported or frame generation is refused; the game's menu can still choose less. Presets A / B / C override game and driver preferences. Legacy Auto remains visible but is written as A on 0.4.1. C is FG Lite, with lower quality on HUD and occlusion edges.
-- **XeSS**: adds `CoarseAt4K` (Coarse at output pixel counts of at least 3840×2160, otherwise Middle) and Auto / strict / off HUD-less input. The old preference migrates to Auto. Unsupported RGBA16F buffers no longer fall back to DLSS.
-- **Super resolution**: RTX 20 / 30 only. Select Off, M-INT8, L-INT8, M-FP16 or L-FP16 explicitly; the selected preset affects every quality mode. Quality, Balanced and DLAA can be slower than the game's preset K. Legacy On has no equivalent single mode: it is retained and requires an explicit choice before applying 0.4.1.
+- **Downloads and defaults**: downloads target **0.4.2**. The full Release package includes SR files; the base package provides frame generation and XeSS. New profiles use DLSS, tier 1, preset A and SR off. Existing tiers and DLSS multipliers are retained. XeSS keeps a separate count: existing profiles retain 2X and can select 3X / 4X.
+- **What 0.4.2 changed**: XeSS-FG has dedicated kernel images for RTX 50 (25–30 % faster there), supports jittered motion vectors (3X / 4X no longer end with `unsupported_input`), and is another 3–5.6 % faster at 4K with bit-identical output. **`UseHudless=Auto` now behaves like `0`**: the whole image, UI included, is interpolated, instead of preferring the game's HUD-less image. After upgrading from 0.4.1, a game set to Auto behaves differently; choose `1` if you want UI compositing.
+- **Multipliers and presets**: the requested count must be supported or frame generation is refused; the game's menu can still choose less. Presets A / B / C override game and driver preferences. Legacy Auto remains visible but is written as A. C is FG Lite, with lower quality on HUD and occlusion edges.
+- **XeSS**: adds `CoarseAt4K` (Coarse at output pixel counts of at least 3840×2160, otherwise Middle) and Auto / 1 / 0 HUD-less input (Auto equals 0 since 0.4.2). Unsupported RGBA16F buffers do not fall back to DLSS.
+- **Super resolution**: RTX 20 / 30 only. Select Off, M-INT8, L-INT8, M-FP16 or L-FP16 explicitly; the selected preset affects every quality mode. Quality, Balanced and DLAA can be slower than the game's preset K. Legacy On has no equivalent single mode: it is retained and requires an explicit choice before applying.
 - **Deployment and recovery**: one proxy plus the complete runtime directory; existing ownership checks and backups remain. Downloads do not update game files. Apply to each game and restart it.
-- **Logs**: the log action prefers `dlssg_sm86/logs/dlssg_sm86.log`. Per-frame GPU timing writes a separate `frame_timing.txt`.
+- **Logs**: the folder comes from `[Logging] Directory` (upstream default `dlssg_sm86\logs`) and the manager keeps upstream's value. The log action prefers `dlssg_sm86.log`; per-frame GPU timing writes a separate `frame_timing.txt`. The only advanced key the manager adds is `FrameTiming`; any other advanced key you put in the INI (such as `MvecJittered=1`) is preserved verbatim.
 
 ### Updates and batch operations
 

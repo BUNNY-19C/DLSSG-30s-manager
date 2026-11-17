@@ -1,0 +1,26 @@
+{
+  "version": "0.4.2",
+  "runtimeModel": "310.9",
+  "capabilities": {
+    "iniSchema": "0.4.2",
+    "runtimeDirectory": true,
+    "singleProxy": true
+  },
+  "files": [
+    { "source": "version.dll", "destination": "version.dll", "kind": "proxy", "signer": "project", "package": "base", "size": 815240, "sha256": "8363E97250F1F4345CBF3E75344A5508262C9BBAFEA5AD7A7F0E2ED97742369A" },
+    { "source": "dlssg_sm86.ini", "destination": "dlssg_sm86.ini", "kind": "config", "signer": "none", "package": "base", "size": 10480, "sha256": "F87C375E80F8992D5988F4FD3434B39E7BD09F1650FFFC3E64BE90C43812C191" },
+    { "source": "alternatives/winmm.dll", "destination": "altnative/winmm.dll", "kind": "proxy", "signer": "project", "package": "base", "size": 825992, "sha256": "77F2867307D7917AD29F09D2EF8EBBC64F250AC66723C527422855151A52E0C4" },
+    { "source": "alternatives/dinput8.dll", "destination": "altnative/dinput8.dll", "kind": "proxy", "signer": "project", "package": "base", "size": 814216, "sha256": "83424EBE94E8B8FCD3F6A8BA4922A089AD93B89DB9EEEB356BEEBF6AF6D5525A" },
+    { "source": "alternatives/dbghelp.dll", "destination": "altnative/dbghelp.dll", "kind": "proxy", "signer": "project", "package": "base", "size": 832648, "sha256": "6E6FDB5E97F9B09FBE897E219026FCC7C7755D3CB995B1CDFAF6BF2B5CF19E09" },
+    { "source": "alternatives/dxgi.dll", "destination": "altnative/dxgi.dll", "kind": "proxy", "signer": "project", "package": "base", "size": 815752, "sha256": "D66D24C98CDC45789D0EC537E113A39859A1178B22FAECBCD22414CE5099F77B" },
+    { "source": "alternatives/d3d12.dll", "destination": "altnative/d3d12.dll", "kind": "proxy", "signer": "project", "package": "base", "size": 815752, "sha256": "29A6C6FA80F0EFAC4271D786E1F84DA62BC85AE0ACAB7FF437CA2349CC621977" },
+    { "source": "dlssg_sm86/backend/sm86_backend.dll", "destination": "dlssg_sm86/backend/sm86_backend.dll", "kind": "runtime", "signer": "project", "package": "base", "size": 2328200, "sha256": "93A1B4AC1AE0DD0853C45B59B16C3698035CC8E3A749E34C232EB579E602B8E2" },
+    { "source": "dlssg_sm86/runtime/nvngx_dlssg.dll", "destination": "dlssg_sm86/runtime/nvngx_dlssg.dll", "kind": "runtime", "signer": "nvidia", "package": "base", "size": 7506544, "sha256": "CADEE1AA6DB3907BABDC3285DA2AEBC4553D92B89C38BA3EAE8ABD8BBA1BEA72" },
+    { "source": "dlssg_sm86/kernels/fg_kernels.dll", "destination": "dlssg_sm86/kernels/fg_kernels.dll", "kind": "runtime", "signer": "project", "package": "base", "size": 11875464, "sha256": "9882A01F30DD65F36EA1FC6223827E6F86679B99EB09E108EACC51556EEA4E18" },
+    { "source": "dlssg_sm86/xefg/xefg_kernels.dll", "destination": "dlssg_sm86/xefg/xefg_kernels.dll", "kind": "runtime", "signer": "project", "package": "base", "size": 17287816, "sha256": "1D9719D347E423B59400F5912FEA87E6C801932810B79E74921B1A30BA7B5318" },
+    { "source": "dlssg_sm86/sr/nvngx_dlss.dll", "destination": "dlssg_sm86/sr/nvngx_dlss.dll", "kind": "runtime", "signer": "nvidia", "package": "full", "size": 74187376, "sha256": "858CCFF96360C3098DB9264CD6F13D04A027E09B6CE7AD5BBC297570E824B4F2" },
+    { "source": "dlssg_sm86/sr/sr_kernels.dll", "destination": "dlssg_sm86/sr/sr_kernels.dll", "kind": "runtime", "signer": "project", "package": "full", "size": 106570376, "sha256": "EA06F9E605B06F9E2644139100D38F86B976C8884C7AD05C76652F16021BB6EE" },
+    { "source": "README.md", "destination": "README.md", "kind": "doc", "signer": "none", "package": "base", "size": 47987, "sha256": "891851A1BF7F0493BB251756C0BE1743B0CD3E023DB30544FA49C5C64B8D4403" },
+    { "source": "THIRD_PARTY_NOTICES.txt", "destination": "THIRD_PARTY_NOTICES.txt", "kind": "doc", "signer": "none", "package": "base", "size": 10517, "sha256": "6729E527A07AE224904E824BFDCDDA52B6E1E80A0C5D23246D69B3804F241184" }
+  ]
+}

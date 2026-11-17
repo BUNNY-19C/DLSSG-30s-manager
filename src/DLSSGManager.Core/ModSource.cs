@@ -153,7 +153,10 @@ public sealed class ModSource
     public bool Supports041 => Has041Schema(IniText) ||
         (System.Version.TryParse(Version.TrimStart('v'), out var version) && version >= new System.Version(0, 4, 1));
 
-    /// <summary>The shipped 0.4.1 template documents explicit SR modes and defaults HUD-less to Auto.</summary>
+    /// <summary>
+    /// The shipped 0.4.1+ template documents explicit SR modes and carries a <c>UseHudless</c> value.
+    /// 0.4.2 keeps both; what changed is what <c>Auto</c> means (it now behaves like <c>0</c>).
+    /// </summary>
     public static bool Has041Schema(string text) =>
         text.Contains("M-INT8", StringComparison.OrdinalIgnoreCase) ||
         Regex.IsMatch(text, @"^\s*UseHudless\s*=\s*Auto\s*(?:;.*)?$", RegexOptions.IgnoreCase | RegexOptions.Multiline);

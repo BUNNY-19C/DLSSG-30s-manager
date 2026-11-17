@@ -2,8 +2,11 @@
 
 面向接手本项目的人（或未来的自己）。README 讲"怎么用"，这里讲"为什么这么做、改的时候会踩到什么"。
 
-- 当前版本：**v1.13.0**（核心重构：.NET 10、计划/执行分离、版本清单、按需提权、崩溃恢复、命令行版）
-- **上游 0.4.1**：配置、兼容迁移与驱动要求见 [0.4.1 适配记录](UPSTREAM-0.4.1.md)。旧版超分 On 在应用新版前要求主动选择显式模式；已有档位与各引擎倍率保留。
+- 当前版本：**v1.14.0**（适配上游 0.4.2；v1.13.0 为核心重构：.NET 10、计划/执行分离、版本清单、按需提权、崩溃恢复、命令行版）
+- **上游 0.4.2**：布局与 INI 结构都没变，只需新增 `Payload/Manifests/0.4.2.json` 并改 `ModFetcher.SupportedRelease`。两处需要留意：
+  - **`[XeSSFG] UseHudless=Auto` 语义变了**：0.4.2 起 Auto 与 `0` 相同（整幅画面含 UI 一起插值），不再是"优先用无 HUD 画面"。管理器照原值写，界面文案已改。
+  - 新增 `[Logging] Directory` 键（日志目录）。管理器不覆写它，沿用上游模板值；自己加的进阶键只有 `FrameTiming`。
+- 上游 0.4.1 / 0.4.0 的适配细节见 [0.4.1 适配记录](UPSTREAM-0.4.1.md) 与 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。旧版超分 On 在应用新版前要求主动选择显式模式；已有档位与各引擎倍率保留。
 - 后续仅发布 Windows x64 自包含单文件绿色版，统一使用 `Portable` 发布配置；产物为 `publish/DLSSGManager.exe`。
 - **v1.11.0 已适配上游 0.4.0**：完整包下载、目录化运行负载、单代理升级、新配置与恢复规则见 [0.4.0 适配记录](UPSTREAM-0.4.0.md)。
 - **v1.12.0 重构内容**：
@@ -13,7 +16,7 @@
   - MVVM 拆分：GameManagementViewModel / BatchViewModel / ProtectionViewModel + IBatchHost 接口
 - 改进范围：见 [UI 落地清单](UI-IMPROVEMENTS.md)。
 - 仓库：`github.com/BUNNY-19C/DLSSG-30s-manager`，打 tag 即发版
-- **核心拆分重构（`refactor/core-split` 分支）**：.NET 10；领域代码移入 `DLSSGManager.Core`；部署拆为"计划 → 执行"；版本清单按哈希校验下载与判定归属；Mod 按版本存放；最小权限提权；崩溃恢复日志；命令行 `dlssgm`；135+ 测试与 CI 冒烟测试。下面第 3、4.3、4.6 节已按新结构改写。
+- **核心里没有写死的上游版本表**：支持哪个版本由 `Payload/Manifests/<版本>.json` + `ModFetcher.SupportedRelease` 决定，两份都要一起改。
 
 ---
 
@@ -232,11 +235,23 @@ powershell -Command "(Get-AuthenticodeSignature 'C:\tmp\v.dll').SignerCertificat
 | 项目 | 代码位置 | 变了要改 |
 |---|---|---|
 | 文件清单 | `Payload/Manifests/<版本>.json` | **每个新版本都要加**：用官方发布包逐个算大小与 SHA-256（`source` 是上游路径，`destination` 是本地布局）；改 `ModFetcher.SupportedRelease`。布局与 INI 不变时只需这一步 |
+| INI 键的语义 | `IniTemplate.Values` / `Strings.*` 的 `Detail.*` 文案 | 上游改某个值的含义时（0.4.2 把 `UseHudless=Auto` 改成等同 `0`），代码可能不用动，但界面文案必须跟着改 |
 | 入口名 | `ModSource.ProxyCandidates` / `KnownProxyNames` | 新增/删除代理名 |
 | 证书指纹 | `ProjectSigning.PinnedThumbprints` | 上游换证书时追加（旧指纹保留，用于识别旧安装） |
 | 版本探测 | `ModSource.ReadVersionFromText` / `ModFetcher.ReadVersionFromReadme` | 横幅/标题格式变化 |
 | INI 键 | `IniTemplate.Values` | 新键需要界面控件 |
 | 默认值 | `GameProfile` 字段默认值 | 上游调默认（0.3.3 把倍率默认从 5 调到 3） |
+
+**0.4.2 用过的核对步骤**（上游现在自带 `manifest.json`，可以省掉一半人工）：
+
+```powershell
+# 1. 下载 release 包，用上游 manifest.json 交叉验证每个文件
+$up = Get-Content manifest.json -Raw | ConvertFrom-Json
+$up.files | % { (Get-FileHash (Join-Path $ex ($_.path -replace '/','\'))).Hash -eq $_.sha256.ToUpper() }
+# 2. 验签：项目指纹应仍是 D963A96D…，NVIDIA 文件是 7B7B0B66…
+# 3. 确认 per-file 源（raw@tag）提供的字节与清单一致 —— 国内用户主要走这类源
+# 4. 用 dlssgm import 导入、verify 核对、deploy 部署，检查生成的 INI 与恢复后目录
+```
 
 **历史经验**：0.3.4 修了 0.3.3 在 RTX 30 上的驱动崩溃、0.3.5 修了帧生成重建后的花屏——这类纯运行时修复**不需要改管理器代码**，只需让用户更新负载。判断标准是：布局/schema/入口/证书都没变，就只更新负载。
 

@@ -24,6 +24,35 @@ public class IniTemplateTests
         Level=1
         """;
 
+    /// <summary>
+    /// The 0.4.2 template: same sections as 0.4.1 plus <c>[Logging] Directory</c>, and advanced keys
+    /// (<c>FrameTiming</c> is one) that are not in the shipped file at all.
+    /// </summary>
+    private const string Template042 = """
+        ; DLSSG SM86 - frame generation for Ampere (RTX 30) and newer.
+        [General]
+        ; 1 = frame generation on
+        Enabled=1
+        [FrameGeneration]
+        Engine=DLSS
+        MaxGeneratedFrames=3
+        [DLSSG]
+        Optimized=1
+        Preset=A
+        [XeSSFG]
+        FlowResolution=Middle
+        ; Auto = same as 0 (default)
+        UseHudless=Auto
+        [Logging]
+        Level=1
+        Directory=dlssg_sm86\logs
+        [Runtime]
+        Mode=Bundled
+        [SuperResolution]
+        ; Off, M-INT8, L-INT8, M-FP16, L-FP16
+        Mode=Off
+        """;
+
     private static Dictionary<string, string> Parse(string ini)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -88,5 +117,39 @@ public class IniTemplateTests
         var text = IniTemplate.Render(Template041, new GameProfile());
         Assert.DoesNotContain("Router=", text);
         Assert.DoesNotContain("KernelImage=", text);
+    }
+
+    [Fact]
+    public void The_042_log_directory_key_is_kept_and_the_advanced_timing_key_added()
+    {
+        var ini = Parse(IniTemplate.Render(Template042, new GameProfile { FrameTiming = true }));
+
+        // New in 0.4.2: the log folder. The manager never chooses it, so upstream's value stays.
+        Assert.Equal(@"dlssg_sm86\logs", ini["Logging.Directory"]);
+        // FrameTiming is an advanced key the shipped INI leaves out; the manager adds it to [Logging].
+        Assert.Equal("1", ini["Logging.FrameTiming"]);
+        Assert.Equal("1", ini["Logging.Level"]);
+    }
+
+    [Fact]
+    public void Hudless_values_are_written_verbatim_on_042()
+    {
+        // 0.4.2 made Auto behave like 0; all three still round-trip, and nothing rewrites Auto to 1.
+        foreach (var mode in new[] { "Auto", "1", "0" })
+        {
+            var ini = Parse(IniTemplate.Render(Template042, new GameProfile { Engine = "XeSS", HudlessMode = mode }));
+            Assert.Equal(mode, ini["XeSSFG.UseHudless"]);
+        }
+    }
+
+    [Fact]
+    public void Unlisted_advanced_keys_the_user_added_survive_a_render()
+    {
+        var edited = Template042.Replace("Preset=A", "Preset=A\nMvecJittered=1");
+
+        var text = IniTemplate.Render(edited, new GameProfile { Preset = "B" });
+
+        Assert.Contains("MvecJittered=1", text);
+        Assert.Contains("Preset=B", text);
     }
 }

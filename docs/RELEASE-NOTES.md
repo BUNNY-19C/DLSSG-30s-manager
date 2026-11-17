@@ -1,3 +1,26 @@
+## v1.14.0：适配上游 0.4.2
+
+- **下载目标改为上游 0.4.2 Release 完整包**，逐文件哈希清单已内置：无论来自 GitHub 官方源还是镜像，每个文件都必须与 0.4.2 发布版完全一致才被采用。上游这次没改文件布局和 INI 结构，旧的 Mod 文件可以直接被覆盖升级，上一版仍保留在 `mod\versions\` 里可回退。
+- **`UseHudless=Auto` 的含义变了，请注意。** 0.4.2 起 `Auto` 与 `0` 相同：整幅画面（含 UI）一起插值，不再优先使用游戏的无 HUD 画面。从 0.4.1 升级后，之前选 Auto 的游戏行为会改变；如果你需要 UI 合成，请把该游戏的「XeSS 无 HUD 输入」改选 `1`。界面里三个选项的说明已按新语义更新。
+- **新增 `[Logging] Directory` 键**：日志目录现在由 INI 决定（上游默认 `dlssg_sm86\logs`）。管理器沿用上游的值，不覆写它；你在 INI 里手加的其他进阶键（例如 0.4.2 新增的 `MvecJittered=1`）也会原样保留。
+- **上游 0.4.2 本身的改进**：XeSS-FG 在 RTX 50 上使用专门的内核镜像（赛博朋克 2077 3440×1440 @ RTX 5070，4X 每真实帧 6.54 → 4.68 ms），支持抖动运动矢量（3X / 4X 不再以 `unsupported_input` 结束），4K 下再快 3.0–5.6% 且输出逐位不变，并附带一个单文件 INI 配置器。
+
+### 升级说明
+
+替换 `DLSSGManager.exe` 后，在管理器里点「下载 / 更新 Mod 文件」获取 0.4.2，然后对各游戏重新「应用到游戏」并重启游戏。下载和导入都不会自动修改游戏目录。已有的游戏库、部署记录与恢复备份继续有效。
+
+### English
+
+Downloads now target upstream 0.4.2, with the full per-file hash manifest embedded: every file must match the release byte for byte whichever source serves it. The file layout and INI structure are unchanged, so an existing payload upgrades in place and the previous release stays in `mod\versions\` for rollback.
+
+**`UseHudless=Auto` behaves differently:** since 0.4.2 it equals `0` — the whole image, UI included, is interpolated, instead of preferring the game's HUD-less image. Games left on Auto will look different after the upgrade; select `1` if you want UI compositing. The option descriptions in the interface now match the upstream wording.
+
+The INI gains `[Logging] Directory` (the log folder, upstream default `dlssg_sm86\logs`); the manager keeps upstream's value rather than overwriting it, and any other advanced key you add yourself (such as 0.4.2's `MvecJittered=1`) is preserved verbatim. Upstream 0.4.2 itself brings Blackwell-specific XeSS-FG kernels, jittered motion vectors (3X / 4X no longer end with `unsupported_input`), a further 3.0–5.6 % speedup at 4K with bit-identical output, and a single-file INI configurator.
+
+**完整改动 / Full changelog:** https://github.com/BUNNY-19C/DLSSG-30s-manager/compare/v1.13.0...v1.14.0
+
+---
+
 ## v1.13.0：更安全的部署与恢复、命令行版
 
 这一版重写了管理器的核心，界面和使用方式基本不变。重点是：在任何情况下都不误删、不误改你游戏目录里的文件。

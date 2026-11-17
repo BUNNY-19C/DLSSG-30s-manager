@@ -21,7 +21,7 @@ namespace DLSSGManager;
 /// </summary>
 public static partial class ModFetcher
 {
-    public const string SupportedRelease = "0.4.1";
+    public const string SupportedRelease = "0.4.2";
     private const string RepoRef = SupportedRelease;
 
     /// <summary>
